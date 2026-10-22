@@ -5,3 +5,7 @@ sqlalchemy==2.1.6
 python-multipart==0.0.32
 httpx==0.28.1
 pytest==8.4.2
+numpy==2.4.6
+opencv-python-headless==5.0.0.93
+pillow==13.0.0
+pymupdf==2.0

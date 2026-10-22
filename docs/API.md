@@ -2,7 +2,7 @@
 
 Status: frozen at week 2. Additions permitted; breaking changes are not (SRS §5.4.4).
 
-Base path: `/api`. All requests and responses are JSON except the upload, which is `multipart/form-data`.
+Base path: `/api`. All requests and responses are JSON except the upload (`multipart/form-data`) and the page-image response (`image/webp`).
 
 ---
 
@@ -77,6 +77,8 @@ Required by the consent protocol (`docs/ethics-consent.md` §7). Irreversible.
 
 `409 duplicate` → `{ "document_id": "…", "status": "done", "duplicate": true }`
 
+`422 quality_rejected` → the document row is kept with `status=rejected_quality`, no job is created, and no page files are stored. The message names the failing page and check.
+
 `403 demo_read_only` when `SMRITI_PROFILE=demo`.
 
 ### `POST /api/documents/{id}/consent`
@@ -104,6 +106,10 @@ Required by the consent protocol (`docs/ethics-consent.md` §7). Irreversible.
   "pages": [{ "page": 1, "url": "/api/documents/…/page/1" }]
 }
 ```
+
+### `GET /api/documents/{id}/page/{n}`
+
+Binary `image/webp`. `404` when the document, page, or stored image is missing; rejected and failed documents have no page images. `Cache-Control: private, max-age=3600`.
 
 ---
 
@@ -303,3 +309,4 @@ Every attempt writes an audit row (`FR-SHR-04`).
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 23 Oct 2026 | Initial frozen contract: 15 endpoints, seven-key summary payload |
+| 1.1 | 23 Oct 2026 | Add `GET /api/documents/{id}/page/{n}`; document quality-rejection semantics |

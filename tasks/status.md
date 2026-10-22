@@ -9,7 +9,7 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 | Module | Phase | State | Done |
 |---|---|---|---|
 | foundation | P0 | code complete, ethics gate open | 8/8 code |
-| intake | P1 (week 3) | next | 0/7 |
+| intake | P1 (week 3) | code complete, 20-doc gate open | 7/9 |
 | extraction | P2 (weeks 4–6) | blocked by intake | 0/7 |
 | normalisation | P3 (week 8) | blocked | 0/4 |
 | safety | P3 (week 7) | blocked | 0/4 |
@@ -31,23 +31,24 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 - [x] `smriti/app.py` + `smriti/main.py`: app factory, lifespan, contract-shaped errors, health, optional static mount
 - [x] `POST /api/patients`, `DELETE /api/patients/{id}` with cascade erase, file removal, audit row, demo read-only guard
 - [x] `web/src/fixtures/summary.json`: frozen contract fixture; bbox length and `from` alias tested
-- [x] `tests/`: 15 passed; non-loopback sockets blocked
+- [x] `tests/`: 36 passed by P1 (15 at P0 merge); non-loopback sockets blocked
 - [x] CI workflow: Python 3.11, install, pytest
 - [ ] Ethics pack submitted (team task, OR-01) — blocks the phase gate
 - [ ] Intended-use statement in the UI, report, and demo (OR-05)
-- [ ] PaddleOCR, PaddlePaddle, OpenCV, PyMuPDF, Pillow, RapidFuzz — deliberately deferred to P2 to keep P0 installable
+- [x] NumPy, OpenCV, Pillow, PyMuPDF added for P1 intake
+- [ ] PaddleOCR, PaddlePaddle, RapidFuzz — deliberately deferred to P2
 
-## P1 — Intake (next)
+## P1 — Intake
 
-- [ ] `smriti/preprocess.py`: EXIF strip, perspective, deskew, CLAHE, upscale; pure functions
-- [ ] `smriti/quality.py`: short edge, Laplacian, aspect ratio, blank page
-- [ ] `smriti/handwriting.py`: detector; `capture_type` set server-side; any doubt → `handwritten`
-- [ ] `smriti/ingest.py`: content hash, idempotent write, PDF split, job row
-- [ ] `POST /api/documents`, `POST /api/documents/{id}/consent`
-- [ ] `GET /api/documents/{id}/page/{n}` (contract gap recorded in `docs/API.md`)
-- [ ] `tests/test_ingest.py`: idempotency, EXIF gone, PDF split, 202 + job
-- [ ] 20 real documents in hand, consent rows recorded
-- [ ] **Gate**: 20 documents available; quality gate does not reject clean documents
+- [x] `smriti/preprocess.py`: EXIF strip, perspective, deskew, CLAHE, upscale; pure functions
+- [x] `smriti/quality.py`: short edge, Laplacian, aspect ratio, blank page, duplicate-page hash
+- [x] `smriti/handwriting.py`: conservative server-side detector; any doubt → `handwritten`
+- [x] `smriti/ingest.py`: SHA-256 idempotency, PDF split at 300 DPI, page WebP files, job row
+- [x] `POST /api/documents`, `POST /api/documents/{id}/consent`, `GET /api/documents/{id}`
+- [x] `GET /api/documents/{id}/page/{n}`, `GET /api/jobs/{id}`
+- [x] `tests/test_preprocess.py`, `tests/test_quality.py`, `tests/test_ingest.py`
+- [ ] 20 real documents in hand, consent rows recorded (team task)
+- [~] **Gate**: five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
 
 ## Module backlog
 
@@ -113,7 +114,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR | Branch | Scope | Checks | State |
 |---|---|---|---|---|
 | PR-01 | `feat/p0-foundation` | P0 foundation: config, schema v1, models/contract, app factory, patients API, tests, CI | 15 passed | merged `dca8223`, tag `p0-foundation` |
-| PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent endpoints | planned | not started |
+| PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent/page/job endpoints | 36 passed | ready for merge |
 | PR-03 | `feat/p2-extraction` | OCR, assembly, extraction, resolver, review loop, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -132,10 +133,25 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 - `36f6594` docs: record P0 status, tick foundation tasks, and update README
 - Merge: `dca8223` (tag `p0-foundation`)
 
+### PR-02 commits
+
+- `97a617b` chore: add intake imaging and PDF dependencies
+- `c2e0c8b` feat(intake): add preprocessing, quality gate, and capture-type detection
+- `bdf4a23` feat(intake): add idempotent ingestion and document/job endpoints
+- `99775e6` test(intake): cover EXIF, idempotency, PDF split, quality, and endpoints
+- `9e77ca3` docs(api): add page endpoint and quality rejection
+- Merge: `pending` (tag `p1-intake`)
+
+## Known limits at P1
+
+- Handwriting detection is a conservative heuristic, not a trained classifier; a shadowed printed page can fall back to `handwritten`.
+- PDF pages are not deduplicated; a perceptual hash cannot distinguish template pages that differ by one value.
+- Page files are removed after the patient-delete transaction commits; a crash between commit and unlink can leave orphan files under `data/uploads`.
+- The 20-document real-corpus gate and the ethics pack are team-owned and still open.
+
 ## Open contract decisions
 
 - Share revoke endpoint is described in `docs/API.md` but not implemented; add with dashboard sharing.
-- Page-image endpoint is missing from the endpoint list; add with intake.
 - `problems` ships as `[]` in v1; no diagnosis extraction is invented.
 - `handwriting.py` is claimed by both intake and handwriting-assist specs; intake owns detection, assist owns ranking.
 - Review response shape is not frozen; freeze it with PR-03.
