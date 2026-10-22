@@ -26,6 +26,13 @@ class Settings:
     resolver_provider: str = "local_rules"
     ocr_model: str = "PP-OCRv6_small"
     quality_blur: float = 100.0
+    quality_min_short_edge: int = 1000
+    quality_max_aspect: float = 4.0
+    quality_min_ink_ratio: float = 0.0005
+    upscale_long_edge: int = 1500
+    max_upload_bytes: int = 25 * 1024 * 1024
+    max_pages: int = 20
+    max_pixels: int = 50_000_000
     hwr_margin: float = 0.15
     share_ttl_minutes: int = 30
 
@@ -48,5 +55,12 @@ def load_settings() -> Settings:
         resolver_provider=os.getenv("SMRITI_RESOLVER_PROVIDER", "local_rules"),
         ocr_model=os.getenv("SMRITI_OCR_MODEL", "PP-OCRv6_small"),
         quality_blur=float(os.getenv("SMRITI_QUALITY_BLUR", "100")),
+        quality_min_short_edge=int(os.getenv("SMRITI_QUALITY_MIN_SHORT_EDGE", "1000")),
+        quality_max_aspect=float(os.getenv("SMRITI_QUALITY_MAX_ASPECT", "4.0")),
+        quality_min_ink_ratio=float(os.getenv("SMRITI_QUALITY_MIN_INK", "0.0005")),
+        upscale_long_edge=int(os.getenv("SMRITI_UPSCALE_LONG_EDGE", "1500")),
+        max_upload_bytes=int(os.getenv("SMRITI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))),
+        max_pages=int(os.getenv("SMRITI_MAX_PAGES", "20")),
+        max_pixels=int(os.getenv("SMRITI_MAX_PIXELS", "50000000")),
         hwr_margin=float(os.getenv("SMRITI_HWR_MARGIN", "0.15")),
     )

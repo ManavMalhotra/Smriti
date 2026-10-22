@@ -39,6 +39,11 @@ class PatientOut(StrictModel):
     created_at: datetime
 
 
+class ConsentCreate(StrictModel):
+    scope: Literal["local", "local_plus_projection"]
+    version: str = "1.0"
+
+
 class DocumentOut(StrictModel):
     id: str
     patient_id: str

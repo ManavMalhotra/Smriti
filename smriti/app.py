@@ -10,13 +10,16 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api.routers import patients
+from api.routers import documents, jobs, patients
 from smriti.config import BASE_DIR, Settings, load_settings
 from smriti.db import create_db_engine, init_db
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
+    dist = (BASE_DIR / "web" / "dist").resolve()
+    if settings.upload_dir.resolve().is_relative_to(dist):
+        raise ValueError("SMRITI_UPLOAD_DIR must be outside web/dist")
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     init_db(settings.db_path)
 
@@ -52,12 +55,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=400, content={"error": error})
 
     app.include_router(patients.router, prefix="/api")
+    app.include_router(documents.router, prefix="/api")
+    app.include_router(jobs.router, prefix="/api")
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "profile": settings.profile}
 
-    dist = BASE_DIR / "web" / "dist"
     if dist.is_dir():
         app.mount("/", StaticFiles(directory=dist, html=True), name="web")
 
