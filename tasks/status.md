@@ -112,7 +112,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 
 | PR | Branch | Scope | Checks | State |
 |---|---|---|---|---|
-| PR-01 | `feat/p0-foundation` | P0 foundation: config, schema v1, models/contract, app factory, patients API, tests, CI | 15 passed | ready to merge |
+| PR-01 | `feat/p0-foundation` | P0 foundation: config, schema v1, models/contract, app factory, patients API, tests, CI | 15 passed | merged `dca8223`, tag `p0-foundation` |
 | PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent endpoints | planned | not started |
 | PR-03 | `feat/p2-extraction` | OCR, assembly, extraction, resolver, review loop, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
@@ -129,6 +129,8 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 - `4775c56` feat(contract): add frozen seven-key summary models and fixture
 - `cb67af7` feat(api): add app factory, health, and patient create/erase
 - `f083189` test: cover schema invariants, erase-all, and summary contract
+- `36f6594` docs: record P0 status, tick foundation tasks, and update README
+- Merge: `dca8223` (tag `p0-foundation`)
 
 ## Open contract decisions
 
