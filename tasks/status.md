@@ -114,7 +114,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR | Branch | Scope | Checks | State |
 |---|---|---|---|---|
 | PR-01 | `feat/p0-foundation` | P0 foundation: config, schema v1, models/contract, app factory, patients API, tests, CI | 15 passed | merged `dca8223`, tag `p0-foundation` |
-| PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent/page/job endpoints | 36 passed | ready for merge |
+| PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent/page/job endpoints | 36 passed | merged `50b3b08`, tag `p1-intake` |
 | PR-03 | `feat/p2-extraction` | OCR, assembly, extraction, resolver, review loop, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -140,7 +140,8 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 - `bdf4a23` feat(intake): add idempotent ingestion and document/job endpoints
 - `99775e6` test(intake): cover EXIF, idempotency, PDF split, quality, and endpoints
 - `9e77ca3` docs(api): add page endpoint and quality rejection
-- Merge: `pending` (tag `p1-intake`)
+- `6fe99bb` docs: record P1 status and tick week-3 tasks
+- Merge: `50b3b08` (tag `p1-intake`)
 
 ## Known limits at P1
 
