@@ -1,0 +1,80 @@
+{
+  "patient": {
+    "id": "p-01",
+    "alias": "P-01",
+    "sex": "F",
+    "dob": null
+  },
+  "coverage": {
+    "first_date": "2025-11-02",
+    "last_date": "2026-09-12",
+    "quarters": [
+      { "q": "2025-Q4", "documents": 1 },
+      { "q": "2026-Q1", "documents": 0 },
+      { "q": "2026-Q3", "documents": 1 }
+    ],
+    "gaps": [
+      {
+        "from": "2025-11-02",
+        "to": "2026-09-12",
+        "months": 10,
+        "text": "No data for 10 months"
+      }
+    ]
+  },
+  "problems": [],
+  "medications": [
+    {
+      "id": "m-01",
+      "brand_raw": "Metformin",
+      "salt": null,
+      "dose": "500 mg",
+      "freq": "BD",
+      "state": "prescribed",
+      "source_doc_id": "d-01",
+      "reported_at": null
+    }
+  ],
+  "results": [
+    {
+      "analyte_id": "hba1c",
+      "display": "HbA1c",
+      "unit": "%",
+      "ref_low": 4.0,
+      "ref_high": 5.6,
+      "points": [
+        {
+          "date": "2025-11-02",
+          "value": 8.9,
+          "flag_printed": "H",
+          "observation_id": "o-01",
+          "document_id": "d-01",
+          "page": 1,
+          "bbox": [0.61, 0.42, 0.78, 0.47]
+        }
+      ],
+      "excluded": []
+    }
+  ],
+  "pending": [
+    {
+      "kind": "directive",
+      "id": "dir-01",
+      "text": "R/V after 2 weeks",
+      "action_type": "review",
+      "due_date": "2025-11-16",
+      "anchor_event": "collection_date",
+      "state": "open"
+    }
+  ],
+  "documents": [
+    {
+      "id": "d-01",
+      "doc_type": "lab_report",
+      "doc_date": "2025-11-02",
+      "collection_date": "2025-11-02",
+      "page_count": 1,
+      "status": "done"
+    }
+  ]
+}

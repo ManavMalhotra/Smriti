@@ -19,7 +19,7 @@ Most tools solve capture. Smriti's contribution is **trust and measurement**:
 
 ## Status
 
-Documentation and specifications are complete. No application code yet.
+Documentation and specifications are complete. P0 (foundation) is code complete; the ethics gate is still open.
 
 | Phase | State |
 |---|---|
@@ -27,14 +27,18 @@ Documentation and specifications are complete. No application code yet.
 | Capability map + 10 module specs | Done |
 | Implementation plan + task list | Done |
 | Supporting docs | In progress |
-| Code | Week 1 onward |
+| Code | P0 foundation done; intake next |
 
 ## Repository map
 
 ```
 docs/       requirements, protocol, ethics, architecture
 specs/      capability map and one spec per module
-tasks/      implementation plan and week-by-week task list
+tasks/      implementation plan, task list, build status, PR log
+smriti/     config, schema, DB, models, app factory
+api/        routers and error shape
+tests/      offline tests with temp DB and upload dir
+web/        frontend workspace and frozen summary fixture
 ```
 
 Start with `docs/index.md` — it lists the reading order and which document owns which decision.
@@ -48,14 +52,16 @@ Start with `docs/index.md` — it lists the reading order and which document own
 
 ## Running it
 
-Not yet. The planned entry points are:
+Python 3.11 is required.
 
 ```bash
-uvicorn smriti.main:app --reload
-npm --prefix web run dev
-pytest -q
-python eval/run_eval.py
+uv venv .venv --python 3.11
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+.venv\Scripts\python.exe -m pytest
+.venv\Scripts\python.exe -m uvicorn smriti.main:app --reload
 ```
+
+The API is at `http://127.0.0.1:8000/api/health`. The web workspace, OCR, and evaluation entry points arrive with later phases.
 
 ## Licence and data
 
