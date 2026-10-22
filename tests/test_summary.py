@@ -25,7 +25,7 @@ def test_summary_fixture_has_exactly_seven_keys():
     assert set(_payload()) == SUMMARY_KEYS
 
 
-def test_summary_fixture_validates_against_pydantic():
+def test_contract():
     summary = Summary.model_validate(_payload())
 
     point = summary.results[0].points[0]

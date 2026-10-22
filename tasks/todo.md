@@ -8,22 +8,23 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 
 ## Week 1 — Foundation
 
-- [ ] `pyproject.toml` / `requirements.txt`: fastapi, uvicorn, pydantic, sqlalchemy, paddleocr, paddlepaddle, opencv-python, pymupdf, pillow, rapidfuzz, pytest
-- [ ] `smriti/config.py`: every key from plan §4, loaded once, recorded per run
-- [ ] `smriti/db.py`: SQLite WAL, `foreign_keys=ON`, migrations for 10 tables (SRS §3.4)
-- [ ] `smriti/models.py`: Pydantic v2 models for patient, document, observation, directive, medication, egress
-- [ ] `smriti/main.py`: app factory, static mount, profile switch
-- [ ] `tests/conftest.py`: temp DB, temp upload dir, frozen clock fixture
-- [ ] CI: pytest on push; fail on network call
+- [x] `pyproject.toml` / `requirements.txt`: core deps pinned (fastapi, uvicorn, pydantic, sqlalchemy, python-multipart, httpx, pytest)
+- [ ] PaddleOCR / PaddlePaddle / OpenCV / PyMuPDF / Pillow / RapidFuzz added at P2 start
+- [x] `smriti/config.py`: every key from plan §4, loaded once, recorded per run
+- [x] `smriti/db.py`: SQLite WAL, `foreign_keys=ON`, schema v1 with 11 tables (SRS §3.4)
+- [x] `smriti/models.py`: Pydantic v2 models for patient, document, observation, directive, medication, egress
+- [x] `smriti/main.py`: app factory, static mount, profile switch
+- [x] `tests/conftest.py`: temp DB, temp upload dir, loopback-only network guard
+- [x] CI: pytest on push; fail on non-loopback network call
 - [ ] Ethics pack submitted (OR-01)
 - [ ] Intended-use statement written once, used in UI, report, demo (OR-05)
-- [ ] `docs/API.md` draft with the 14 endpoints
-- [ ] **GATE** ethics submitted; tests run
+- [x] `docs/API.md` draft with the 15 endpoints
+- [~] **GATE** ethics submitted; tests run (tests green; ethics pack open)
 
 ## Week 2 — Contract and probes
 
-- [ ] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01)
-- [ ] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12)
+- [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
+- [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
 - [ ] Vite + Tailwind + Recharts shell renders the fixture
 - [ ] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed (OpenAPI)
 - [ ] **Probe A** — `python -m smriti.candidates --probe`: PP-OCRv6 over 10 handwritten drug lines; record output and top-3
