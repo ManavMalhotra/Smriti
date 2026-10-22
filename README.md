@@ -19,7 +19,7 @@ Most tools solve capture. Smriti's contribution is **trust and measurement**:
 
 ## Status
 
-Documentation and specifications are complete. P0 (foundation) is code complete; the ethics gate is still open.
+Documentation and specifications are complete. P0 (foundation) and P1 (intake) are code complete; the ethics and 20-document gates are still open.
 
 | Phase | State |
 |---|---|
@@ -27,7 +27,7 @@ Documentation and specifications are complete. P0 (foundation) is code complete;
 | Capability map + 10 module specs | Done |
 | Implementation plan + task list | Done |
 | Supporting docs | In progress |
-| Code | P0 foundation done; intake next |
+| Code | P1 intake done; extraction next |
 
 ## Repository map
 
@@ -35,9 +35,9 @@ Documentation and specifications are complete. P0 (foundation) is code complete;
 docs/       requirements, protocol, ethics, architecture
 specs/      capability map and one spec per module
 tasks/      implementation plan, task list, build status, PR log
-smriti/     config, schema, DB, models, app factory
+smriti/     config, schema, DB, models, app factory, intake pipeline
 api/        routers and error shape
-tests/      offline tests with temp DB and upload dir
+tests/      36 offline tests with temp DB and upload dir
 web/        frontend workspace and frozen summary fixture
 ```
 
@@ -61,7 +61,7 @@ uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 .venv\Scripts\python.exe -m uvicorn smriti.main:app --reload
 ```
 
-The API is at `http://127.0.0.1:8000/api/health`. The web workspace, OCR, and evaluation entry points arrive with later phases.
+The API is at `http://127.0.0.1:8000/api/health`. JPEG, PNG, and PDF uploads go to `POST /api/documents`; stored pages are served at `GET /api/documents/{id}/page/{n}`. The web workspace, OCR, and evaluation entry points arrive with later phases.
 
 ## Licence and data
 

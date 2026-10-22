@@ -9,7 +9,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 ## Week 1 — Foundation
 
 - [x] `pyproject.toml` / `requirements.txt`: core deps pinned (fastapi, uvicorn, pydantic, sqlalchemy, python-multipart, httpx, pytest)
-- [ ] PaddleOCR / PaddlePaddle / OpenCV / PyMuPDF / Pillow / RapidFuzz added at P2 start
+- [x] NumPy / OpenCV / PyMuPDF / Pillow added for P1 intake
+- [ ] PaddleOCR / PaddlePaddle / RapidFuzz added at P2 start
 - [x] `smriti/config.py`: every key from plan §4, loaded once, recorded per run
 - [x] `smriti/db.py`: SQLite WAL, `foreign_keys=ON`, schema v1 with 11 tables (SRS §3.4)
 - [x] `smriti/models.py`: Pydantic v2 models for patient, document, observation, directive, medication, egress
@@ -18,7 +19,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 - [x] CI: pytest on push; fail on non-loopback network call
 - [ ] Ethics pack submitted (OR-01)
 - [ ] Intended-use statement written once, used in UI, report, demo (OR-05)
-- [x] `docs/API.md` draft with the 15 endpoints
+- [x] `docs/API.md` draft with the 15 endpoints; page-image endpoint added in P1 (16 total)
 - [~] **GATE** ethics submitted; tests run (tests green; ethics pack open)
 
 ## Week 2 — Contract and probes
@@ -26,7 +27,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
 - [ ] Vite + Tailwind + Recharts shell renders the fixture
-- [ ] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed (OpenAPI)
+- [x] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed and implemented
 - [ ] **Probe A** — `python -m smriti.candidates --probe`: PP-OCRv6 over 10 handwritten drug lines; record output and top-3
 - [ ] **Probe B** — preprocessing A/B over 20 docs: baseline vs perspective+deskew+CLAHE+upscale
 - [ ] Record both probe results in `docs/evaluation.md`
@@ -34,14 +35,15 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 
 ## Week 3 — Intake
 
-- [ ] `smriti/preprocess.py`: EXIF strip, perspective, deskew, CLAHE, upscale — pure functions
-- [ ] `smriti/quality.py`: short edge, Laplacian, aspect ratio, blank page
-- [ ] `smriti/handwriting.py`: detector; sets `capture_type` server-side (FR-ING-02)
-- [ ] `smriti/ingest.py`: content hash, idempotent write, page split, job row
-- [ ] `POST /api/documents`, `POST /api/documents/{id}/consent`
-- [ ] `tests/test_ingest.py`: idempotency, EXIF gone, PDF split, 202+job
+- [x] `smriti/preprocess.py`: EXIF strip, perspective, deskew, CLAHE, upscale — pure functions
+- [x] `smriti/quality.py`: short edge, Laplacian, aspect ratio, blank page, duplicate-page hash
+- [x] `smriti/handwriting.py`: detector; sets `capture_type` server-side (FR-ING-02)
+- [x] `smriti/ingest.py`: content hash, idempotent write, page split, job row
+- [x] `POST /api/documents`, `POST /api/documents/{id}/consent`
+- [x] `GET /api/documents/{id}/page/{n}`, `GET /api/documents/{id}`, `GET /api/jobs/{id}`
+- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`: 36 passed
 - [ ] 20 real documents in hand, consent rows recorded
-- [ ] **GATE** 20 documents available; quality gate does not reject clean docs
+- [~] **GATE** five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
 
 ## Week 4 — OCR baseline
 
