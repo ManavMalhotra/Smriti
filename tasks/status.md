@@ -157,7 +157,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-06a | `feat/dashboard-shell` | Week 2 fixture-only dashboard shell: Vite/React/Tailwind/Recharts, four zones, source path, Vitest + axe | 11 frontend, 36 Python, build passed | merged `80d179d`, tag `dashboard-shell` |
 | PR-02a | `feat/intake-ui` | Local intake UI for P1: create patient, upload with local-only consent, queued result, page-1 preview, duplicate/error states | 18 frontend, 36 Python, build passed, live upload, 1280/390 visual checks | merged `0c0e343`, tag `intake-ui` |
 | PR-02b | `feat/a11y-hardening` | NFR-09: focus handoff on navigation, result, reset, and patient change; WCAG 1.4.11 control borders | 18 frontend, 36 Python, build passed, manual Tab/focus and contrast check | merged `60c017c`, tag `a11y-ui` |
-| PR-03a | `feat/patient-auth-ai` | Per-patient accounts, session isolation, local PaddleOCR/classifier/rule extraction, worker, real summary API, authenticated intake polling and extracted fields | 52 Python, 24 frontend, build passed, real OCR smoke test | pending merge |
+| PR-03a | `feat/patient-auth-ai` | Per-patient accounts, session isolation, local PaddleOCR/classifier/rule extraction, worker, real summary API, authenticated intake polling and extracted fields | 52 Python, 24 frontend, build passed, real OCR smoke test | merged `75faa50`, tag `patient-auth-ai` |
 | PR-03 | `feat/p2-extraction` | Full OCR assembly, resolver, review loop, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -208,6 +208,11 @@ PR-03a is a partial P2 slice pulled forward with the account model. It does not 
 
 - `47111ce` fix(web): manage focus and meet control contrast on view changes
 - Merge: `60c017c` (tag `a11y-ui`)
+
+### PR-03a commits
+
+- `ac9ce47` feat: add per-patient accounts and local extraction
+- Merge: `75faa50` (tag `patient-auth-ai`)
 
 ## Known limits at P2 partial
 
