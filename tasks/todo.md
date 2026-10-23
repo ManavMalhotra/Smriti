@@ -26,7 +26,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
-- [x] Vite + Tailwind + Recharts shell renders the fixture (patient mode; Recharts lazy-loads when a result has more than one point; 11 Vitest + axe tests)
+- [x] Vite + Tailwind + Recharts shell renders the fixture (patient mode; Recharts lazy-loads when a result has more than one point; 18 Vitest + axe tests)
+- [x] Local intake form: create patient, upload JPEG/PNG/PDF with local-only consent, queued status and page preview (pulled forward from Week 6)
 - [x] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed and implemented
 - [ ] **Probe A** — `python -m smriti.candidates --probe`: PP-OCRv6 over 10 handwritten drug lines; record output and top-3
 - [ ] **Probe B** — preprocessing A/B over 20 docs: baseline vs perspective+deskew+CLAHE+upscale
@@ -71,7 +72,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 
 - [ ] `POST /api/observations/{id}/review` + audit rows
 - [ ] Review UI: field, crop, candidates, accept/correct/reject, keyboard path
-- [ ] Upload UI + 2 s job polling (FR-JOB-04)
+- [~] Upload UI + 2 s job polling (FR-JOB-04); local create/upload/consent/page preview done, polling and review UI open
 - [ ] `tests/test_review.py`
 - [ ] **M1 evaluation** on 40 docs: field F1, end-to-end, material errors
 - [ ] Medication F1 baseline; lexicon coverage reported (FR-MED-05)

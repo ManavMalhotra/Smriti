@@ -9,13 +9,13 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 | Module | Phase | State | Done |
 |---|---|---|---|
 | foundation | P0 | code complete, ethics gate open | 8/8 code |
-| intake | P1 (week 3) | code complete, 20-doc gate open | 7/9 |
+| intake | P1 (week 3) | code complete + local upload UI, 20-doc gate open | 7/9 |
 | extraction | P2 (weeks 4–6) | blocked by intake | 0/7 |
 | normalisation | P3 (week 8) | blocked | 0/4 |
 | safety | P3 (week 7) | blocked | 0/4 |
 | medications | P4 (week 10) | blocked | 0/3 |
 | directives | P4 (week 11) | blocked | 0/4 |
-| dashboard | P5 (weeks 6, 14) | fixture shell only; summary API blocked | 1/5 |
+| dashboard | P5 (weeks 6, 14) | fixture shell + intake form; summary API blocked | 1/5 |
 | egress | P6 (week 8) | blocked | 0/4 |
 | handwriting-assist | P7 (weeks 9–10) | gated by week-8 decision | 0/5 |
 | evaluation | P2+ (weeks 4–12) | blocked | 0/5 |
@@ -57,8 +57,9 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 - [x] Apple-minimal monochrome shell: system font, `#f5f5f7` page, white cards, thin borders, no gradients or glass
 - [x] Printed flags shown verbatim; no computed "abnormal" copy
 - [x] Source path panel shows document, page, and normalised bbox; fixture IDs have no page image yet
-- [x] 11 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
-- [ ] Live summary API, page-image link, upload UI, clinician mode, and sharing (blocked on P3/P4/P5)
+- [x] Local intake form: create patient, upload JPEG/PNG/PDF with local-only consent, queued status and page preview
+- [x] 18 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
+- [ ] Live summary API, fixture page-image link, 2 s job polling/review UI, clinician mode, and sharing (blocked on P3/P4/P5)
 
 ## Module backlog
 
@@ -126,6 +127,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-01 | `feat/p0-foundation` | P0 foundation: config, schema v1, models/contract, app factory, patients API, tests, CI | 15 passed | merged `dca8223`, tag `p0-foundation` |
 | PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent/page/job endpoints | 36 passed | merged `50b3b08`, tag `p1-intake` |
 | PR-06a | `feat/dashboard-shell` | Week 2 fixture-only dashboard shell: Vite/React/Tailwind/Recharts, four zones, source path, Vitest + axe | 11 frontend, 36 Python, build passed | merged `80d179d`, tag `dashboard-shell` |
+| PR-02a | `feat/intake-ui` | Local intake UI for P1: create patient, upload with local-only consent, queued result, page-1 preview, duplicate/error states | 18 frontend, 36 Python, build passed, live upload, 1280/390 visual checks | merged `0c0e343`, tag `intake-ui` |
 | PR-03 | `feat/p2-extraction` | OCR, assembly, extraction, resolver, review loop, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -162,14 +164,24 @@ PR-06a is a fixture-only slice of PR-06, pulled forward so the UI contract is vi
 - `67d5f3e` test(web): cover zone order, coverage, flags, source path, and a11y
 - Merge: `80d179d` (tag `dashboard-shell`)
 
-## Known limits at P1 + UI shell
+### PR-02a commits
+
+- `15b3769` feat(web): add local intake form for P1 uploads
+- `5f12da0` test(web): cover intake upload, errors, duplicates, and a11y
+- Merge: `0c0e343` (tag `intake-ui`)
+
+## Known limits at P1 + local UI
 
 - Handwriting detection is a conservative heuristic, not a trained classifier; a shadowed printed page can fall back to `handwritten`.
 - PDF pages are not deduplicated; a perceptual hash cannot distinguish template pages that differ by one value.
 - Page files are removed after the patient-delete transaction commits; a crash between commit and unlink can leave orphan files under `data/uploads`.
 - The 20-document real-corpus gate and the ethics pack are team-owned and still open.
-- The dashboard shell renders the frozen fixture only. `GET /api/patients/{id}/summary` and the live page-image link do not exist yet.
-- Patient mode only; upload UI, 2 s job polling, clinician mode, sharing, and live source images remain in PR-06/Week 6.
+- The summary shell renders the frozen fixture only. The intake form writes real patients and documents locally, but `GET /api/patients/{id}/summary` and patient/document list endpoints do not exist, so intake records are not shown in the summary.
+- The intake form creates the patient before upload; a rejected or duplicate upload can leave an empty patient. There is no list endpoint to reuse or clean it up in the UI.
+- The current patient is kept only in the intake screen's React state; returning to the summary discards it. The summary/intake switch is not a URL route, so refresh returns to the sample summary.
+- The intake form sends the optional `doc_date` only; `collection_date` is not collected yet.
+- Uploads stay queued because no OCR worker exists; the intake UI shows the queued state and does not poll.
+- Patient mode only; job polling, review UI, clinician mode, sharing, and live source images remain in PR-06/Week 6.
 - The trend chart only renders with more than one point; the fixture's single HbA1c point stays a table.
 - Source paths show the normalised box, but fixture IDs are not seeded, so no page image is linked.
 

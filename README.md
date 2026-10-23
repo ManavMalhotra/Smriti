@@ -19,7 +19,7 @@ Most tools solve capture. Smriti's contribution is **trust and measurement**:
 
 ## Status
 
-Documentation and specifications are complete. P0 (foundation) and P1 (intake) are code complete; the ethics and 20-document gates are still open. A fixture-only Week 2 dashboard shell now renders the frozen summary contract in the four required zones.
+Documentation and specifications are complete. P0 (foundation) and P1 (intake) are code complete; the ethics and 20-document gates are still open. A fixture-only Week 2 dashboard shell renders the frozen summary contract in the four required zones, and a local intake form writes real patients and uploads through the existing P1 endpoints.
 
 | Phase | State |
 |---|---|
@@ -27,7 +27,7 @@ Documentation and specifications are complete. P0 (foundation) and P1 (intake) a
 | Capability map + 10 module specs | Done |
 | Implementation plan + task list | Done |
 | Supporting docs | In progress |
-| Code | P1 intake + fixture dashboard shell; extraction next |
+| Code | P1 intake + fixture dashboard shell + local intake form; extraction next |
 
 ## Repository map
 
@@ -38,7 +38,7 @@ tasks/      implementation plan, task list, build status, PR log
 smriti/     config, schema, DB, models, app factory, intake pipeline
 api/        routers and error shape
 tests/      36 offline Python tests with temp DB and upload dir
-web/        Vite/React/Tailwind/Recharts shell, frozen summary fixture, 11 Vitest + axe tests
+web/        Vite/React/Tailwind/Recharts shell, local intake form, 18 Vitest + axe tests
 ```
 
 Start with `docs/index.md` — it lists the reading order and which document owns which decision.
@@ -72,7 +72,7 @@ npm --prefix web run build
 npm --prefix web run dev
 ```
 
-The Vite dev server proxies `/api` to `http://127.0.0.1:8000`. `npm --prefix web run build` writes `web/dist`, which FastAPI mounts at `/`; open `http://127.0.0.1:8000/` after building. The shell is fixture-only until the summary API lands, so it makes no network calls. OCR and evaluation entry points arrive with later phases.
+The Vite dev server proxies `/api` to `http://127.0.0.1:8000`. `npm --prefix web run build` writes `web/dist`, which FastAPI mounts at `/`; open `http://127.0.0.1:8000/` after building. The summary view is fixture-only until the summary API lands and makes no network calls. The intake view creates a patient and uploads a file through the local P1 API; all files stay on the device, and uploaded jobs remain queued until an OCR worker exists. OCR and evaluation entry points arrive with later phases.
 
 ## Licence and data
 
