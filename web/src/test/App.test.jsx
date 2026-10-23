@@ -1,8 +1,24 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import App from "../App";
 import Dashboard from "../pages/Dashboard";
 import summary from "../fixtures/summary.json";
+
+describe("App navigation", () => {
+  it("opens the intake form and returns to the summary", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add document" }));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Add a document" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to summary" }));
+    expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toBeInTheDocument();
+  });
+});
 
 describe("Dashboard shell", () => {
   it("renders the four zones in fixed order", () => {
