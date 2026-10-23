@@ -1,7 +1,7 @@
 import CoverageStrip from "./CoverageStrip";
 import { formatDate, formatSex } from "../lib/format";
 
-export default function Header({ patient, coverage }) {
+export default function Header({ patient, coverage, onAdd }) {
   const gap = coverage.gaps?.[0];
   const meta = [
     patient.sex ? formatSex(patient.sex) : null,
@@ -16,7 +16,14 @@ export default function Header({ patient, coverage }) {
     <header>
       <div className="topbar">
         <div className="wordmark">Smriti</div>
-        <div className="topbar-note">Research prototype</div>
+        <div className="topbar-actions">
+          <span className="topbar-note">Research prototype</span>
+          {onAdd ? (
+            <button type="button" className="text-button" onClick={onAdd}>
+              Add document
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="patient">

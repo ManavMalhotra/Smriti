@@ -5,11 +5,12 @@ import Medications from "../components/Medications";
 import Results from "../components/Results";
 import Pending from "../components/Pending";
 import Documents from "../components/Documents";
+import Footer from "../components/Footer";
 
-export default function Dashboard({ data = summary }) {
+export default function Dashboard({ data = summary, onAdd }) {
   return (
     <div className="shell">
-      <Header patient={data.patient} coverage={data.coverage} />
+      <Header patient={data.patient} coverage={data.coverage} onAdd={onAdd} />
 
       <main>
         <div className="zone-grid two">
@@ -27,10 +28,7 @@ export default function Dashboard({ data = summary }) {
         </div>
       </main>
 
-      <footer className="footer">
-        <p>Research prototype. Not a medical device. Not for clinical use.</p>
-        <p>Data stays on this device.</p>
-      </footer>
+      <Footer />
     </div>
   );
 }
