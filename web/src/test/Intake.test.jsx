@@ -75,7 +75,7 @@ describe("Intake", () => {
     await fillForm(user);
     await submit(user);
 
-    expect(await screen.findByRole("heading", { name: "Document queued" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Document queued" })).toHaveFocus();
     expect(screen.getByRole("img", { name: /first page of the uploaded lab report/i })).toHaveAttribute(
       "src",
       "/api/documents/doc-1/page/1",
@@ -124,7 +124,7 @@ describe("Intake", () => {
 
     await submit(user);
 
-    expect(await screen.findByRole("heading", { name: "Document queued" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Document queued" })).toHaveFocus();
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/patients")).toHaveLength(1);
   });
@@ -143,7 +143,7 @@ describe("Intake", () => {
     await fillForm(user);
     await submit(user);
 
-    expect(await screen.findByRole("heading", { name: "Already stored" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Already stored" })).toHaveFocus();
     expect(screen.getByText(/matches a document already on this device/i)).toBeInTheDocument();
     expect(screen.getByText("doc-existing")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
@@ -172,6 +172,10 @@ describe("Intake", () => {
     expect(screen.queryByLabelText("Patient alias")).not.toBeInTheDocument();
     expect(screen.getByText("P-02")).toBeInTheDocument();
     expect(screen.getByLabelText("Document file").files).toHaveLength(0);
+    expect(screen.getByLabelText("Document file")).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "Change patient" }));
+    expect(screen.getByLabelText("Patient alias")).toHaveFocus();
   });
 
   it("has no automatically detectable accessibility violations", async () => {

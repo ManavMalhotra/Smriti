@@ -14,9 +14,9 @@ describe("App navigation", () => {
     await user.click(screen.getByRole("button", { name: "Add document" }));
     expect(
       screen.getByRole("heading", { level: 1, name: "Add a document" }),
-    ).toBeInTheDocument();
+    ).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Back to summary" }));
-    expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toHaveFocus();
   });
 });
 
