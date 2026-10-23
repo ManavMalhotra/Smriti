@@ -15,7 +15,7 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 | safety | P3 (week 7) | blocked | 0/4 |
 | medications | P4 (week 10) | blocked | 0/3 |
 | directives | P4 (week 11) | blocked | 0/4 |
-| dashboard | P5 (weeks 6, 14) | blocked | 0/5 |
+| dashboard | P5 (weeks 6, 14) | fixture shell only; summary API blocked | 1/5 |
 | egress | P6 (week 8) | blocked | 0/4 |
 | handwriting-assist | P7 (weeks 9–10) | gated by week-8 decision | 0/5 |
 | evaluation | P2+ (weeks 4–12) | blocked | 0/5 |
@@ -34,7 +34,7 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 - [x] `tests/`: 36 passed by P1 (15 at P0 merge); non-loopback sockets blocked
 - [x] CI workflow: Python 3.11, install, pytest
 - [ ] Ethics pack submitted (team task, OR-01) — blocks the phase gate
-- [ ] Intended-use statement in the UI, report, and demo (OR-05)
+- [~] Intended-use statement in the UI footer; report and demo still open (OR-05)
 - [x] NumPy, OpenCV, Pillow, PyMuPDF added for P1 intake
 - [ ] PaddleOCR, PaddlePaddle, RapidFuzz — deliberately deferred to P2
 
@@ -49,6 +49,16 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 - [x] `tests/test_preprocess.py`, `tests/test_quality.py`, `tests/test_ingest.py`
 - [ ] 20 real documents in hand, consent rows recorded (team task)
 - [~] **Gate**: five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
+
+## Week 2 - UI shell
+
+- [x] `web/`: Vite + React (JS) + Tailwind v4 + Vitest; Recharts is lazy-loaded only when a result has more than one point
+- [x] Four zones in fixed order: header with gap + coverage, problems + current medications, results, pending + documents
+- [x] Apple-minimal monochrome shell: system font, `#f5f5f7` page, white cards, thin borders, no gradients or glass
+- [x] Printed flags shown verbatim; no computed "abnormal" copy
+- [x] Source path panel shows document, page, and normalised bbox; fixture IDs have no page image yet
+- [x] 11 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
+- [ ] Live summary API, page-image link, upload UI, clinician mode, and sharing (blocked on P3/P4/P5)
 
 ## Module backlog
 
@@ -79,7 +89,7 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 
 ### Dashboard and sharing
 
-- [ ] Vite + Tailwind + Recharts shell renders the frozen fixture
+- [x] Vite + Tailwind + Recharts shell renders the frozen fixture (patient mode; chart loads only when a result has more than one point)
 - [ ] Aggregate summary: four zones, coverage strip, gaps
 - [ ] Patient and clinician modes
 - [ ] Share link with PIN, expiry, attempt lock, revoke endpoint and audit
@@ -115,6 +125,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 |---|---|---|---|---|
 | PR-01 | `feat/p0-foundation` | P0 foundation: config, schema v1, models/contract, app factory, patients API, tests, CI | 15 passed | merged `dca8223`, tag `p0-foundation` |
 | PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent/page/job endpoints | 36 passed | merged `50b3b08`, tag `p1-intake` |
+| PR-06a | `feat/dashboard-shell` | Week 2 fixture-only dashboard shell: Vite/React/Tailwind/Recharts, four zones, source path, Vitest + axe | 11 frontend, 36 Python, build passed | merged `80d179d`, tag `dashboard-shell` |
 | PR-03 | `feat/p2-extraction` | OCR, assembly, extraction, resolver, review loop, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -122,6 +133,8 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-07 | `feat/p6-egress` | Typed projection, consent gate, adapter, kill switch, queue-shrink experiment | planned | not started |
 | PR-08 | `feat/p7-handwriting` | Candidate ranking, field review, vigilance measurement (conditional) | planned | not started |
 | PR-09 | `feat/p8-evaluation` | Full offline evaluation, CIs, risk–coverage, report artifacts | planned | not started |
+
+PR-06a is a fixture-only slice of PR-06, pulled forward so the UI contract is visible before the summary API. The full dashboard remains PR-06.
 
 ### PR-01 commits
 
@@ -143,12 +156,22 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 - `6fe99bb` docs: record P1 status and tick week-3 tasks
 - Merge: `50b3b08` (tag `p1-intake`)
 
-## Known limits at P1
+### PR-06a commits
+
+- `22bc543` feat(web): add fixture dashboard shell with four zones
+- `67d5f3e` test(web): cover zone order, coverage, flags, source path, and a11y
+- Merge: `80d179d` (tag `dashboard-shell`)
+
+## Known limits at P1 + UI shell
 
 - Handwriting detection is a conservative heuristic, not a trained classifier; a shadowed printed page can fall back to `handwritten`.
 - PDF pages are not deduplicated; a perceptual hash cannot distinguish template pages that differ by one value.
 - Page files are removed after the patient-delete transaction commits; a crash between commit and unlink can leave orphan files under `data/uploads`.
 - The 20-document real-corpus gate and the ethics pack are team-owned and still open.
+- The dashboard shell renders the frozen fixture only. `GET /api/patients/{id}/summary` and the live page-image link do not exist yet.
+- Patient mode only; upload UI, 2 s job polling, clinician mode, sharing, and live source images remain in PR-06/Week 6.
+- The trend chart only renders with more than one point; the fixture's single HbA1c point stays a table.
+- Source paths show the normalised box, but fixture IDs are not seeded, so no page image is linked.
 
 ## Open contract decisions
 
@@ -156,3 +179,4 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 - `problems` ships as `[]` in v1; no diagnosis extraction is invented.
 - `handwriting.py` is claimed by both intake and handwriting-assist specs; intake owns detection, assist owns ranking.
 - Review response shape is not frozen; freeze it with PR-03.
+- The summary response is frozen as a fixture but the `GET /api/patients/{id}/summary` endpoint is not implemented; add it with PR-06 before the full dashboard.

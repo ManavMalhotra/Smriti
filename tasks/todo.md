@@ -18,7 +18,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 - [x] `tests/conftest.py`: temp DB, temp upload dir, loopback-only network guard
 - [x] CI: pytest on push; fail on non-loopback network call
 - [ ] Ethics pack submitted (OR-01)
-- [ ] Intended-use statement written once, used in UI, report, demo (OR-05)
+- [~] Intended-use statement written once, used in UI, report, demo (OR-05); UI footer done, report and demo open
 - [x] `docs/API.md` draft with the 15 endpoints; page-image endpoint added in P1 (16 total)
 - [~] **GATE** ethics submitted; tests run (tests green; ethics pack open)
 
@@ -26,7 +26,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
-- [ ] Vite + Tailwind + Recharts shell renders the fixture
+- [x] Vite + Tailwind + Recharts shell renders the fixture (patient mode; Recharts lazy-loads when a result has more than one point; 11 Vitest + axe tests)
 - [x] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed and implemented
 - [ ] **Probe A** — `python -m smriti.candidates --probe`: PP-OCRv6 over 10 handwritten drug lines; record output and top-3
 - [ ] **Probe B** — preprocessing A/B over 20 docs: baseline vs perspective+deskew+CLAHE+upscale
@@ -134,7 +134,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 ## Week 13 — Usability and bug pass
 
 - [ ] 5–8 participant sessions: time-to-answer vs paper folder
-- [ ] Keyboard-only and contrast audit (NFR-09)
+- [~] Keyboard-only and contrast audit (NFR-09); automated axe pass done, manual session open
 - [ ] Bug pass on the cut list
 - [ ] **GATE** usability data in hand
 
