@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Footer from "../components/Footer";
 import { docTypeLabel, statusLabel } from "../lib/format";
 
@@ -38,6 +38,26 @@ export default function Intake({ onDone }) {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const fileInputRef = useRef(null);
+  const aliasInputRef = useRef(null);
+  const resultHeadingRef = useRef(null);
+  const hadResult = useRef(false);
+  const previousPatient = useRef(patient);
+
+  useEffect(() => {
+    if (result) {
+      hadResult.current = true;
+      resultHeadingRef.current?.focus();
+    } else if (hadResult.current) {
+      fileInputRef.current?.focus();
+    }
+  }, [result]);
+
+  useEffect(() => {
+    if (previousPatient.current && !patient) {
+      aliasInputRef.current?.focus();
+    }
+    previousPatient.current = patient;
+  }, [patient]);
 
   function clearFile() {
     setFile(null);
@@ -148,7 +168,7 @@ export default function Intake({ onDone }) {
 
       <main>
         <header className="page-head">
-          <h1>Add a document</h1>
+          <h1 tabIndex={-1}>Add a document</h1>
           <p>
             Create a local patient record and upload a lab report, prescription, or pharmacy slip.
             The summary preview uses sample data until the live summary API is connected.
@@ -159,7 +179,7 @@ export default function Intake({ onDone }) {
         <section className="panel" aria-labelledby="intake-result-heading">
           <div className="result-head">
             <div>
-              <h2 id="intake-result-heading">
+              <h2 id="intake-result-heading" ref={resultHeadingRef} tabIndex={-1}>
                 {result.duplicate ? "Already stored" : "Document queued"}
               </h2>
               <p className="result-ref">
@@ -235,6 +255,7 @@ export default function Intake({ onDone }) {
                 <div className="field">
                   <label htmlFor="patient-alias">Patient alias</label>
                   <input
+                    ref={aliasInputRef}
                     id="patient-alias"
                     name="alias"
                     type="text"

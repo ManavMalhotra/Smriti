@@ -10,6 +10,7 @@
   --faint: #6e6e73;
   --line: #d2d2d7;
   --line-soft: #e8e8ed;
+  --control-line: #8a8a8e;
   --accent: #0066cc;
   --danger: #b42318;
   --danger-bg: #fff5f5;
@@ -120,6 +121,12 @@ a {
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.1;
+}
+
+.page-head h1:focus,
+.patient h1:focus,
+.result-head h2:focus {
+  outline: none;
 }
 
 .patient-meta {
@@ -295,7 +302,7 @@ legend {
   max-width: 100%;
   min-height: 38px;
   padding: 7px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-line);
   border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
@@ -375,7 +382,7 @@ legend {
 }
 
 .button-secondary {
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-line);
   background: var(--surface);
   color: var(--ink);
 }

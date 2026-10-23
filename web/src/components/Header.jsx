@@ -28,7 +28,7 @@ export default function Header({ patient, coverage, onAdd }) {
 
       <div className="patient">
         <div>
-          <h1>{patient.alias}</h1>
+          <h1 tabIndex={-1}>{patient.alias}</h1>
           {meta.length > 0 ? <p className="patient-meta">{meta.join(" · ")}</p> : null}
         </div>
         <p className="patient-range">{range}</p>
