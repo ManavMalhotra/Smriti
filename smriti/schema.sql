@@ -1,4 +1,4 @@
--- Smriti schema v1.
+-- Smriti schema v2.
 -- One `document` row per upload; page images live under `image_path`/<page>.webp.
 -- Boxes are normalised JSON arrays; decimal lab values are canonical strings.
 
@@ -11,6 +11,8 @@ CREATE TABLE patient (
     alias       TEXT NOT NULL,
     dob         TEXT,
     sex         TEXT CHECK (sex IN ('M', 'F', 'O')),
+    username    TEXT,
+    password_hash TEXT,
     created_at  TEXT NOT NULL
 );
 
@@ -28,6 +30,8 @@ CREATE TABLE document (
     quality_json     TEXT,                      -- per-page scores and applied steps
     content_hash     TEXT NOT NULL UNIQUE,
     status           TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'done', 'failed', 'rejected_quality')),
+    doc_type_confidence REAL,
+    processed_at     TEXT,
     created_at       TEXT NOT NULL
 );
 
@@ -44,6 +48,7 @@ CREATE TABLE observation (
     id            TEXT PRIMARY KEY,
     document_id   TEXT NOT NULL REFERENCES document(id) ON DELETE CASCADE,
     analyte_id    TEXT,
+    label_raw     TEXT,
     value_num     TEXT,
     value_text    TEXT,
     unit_raw      TEXT,
@@ -154,6 +159,23 @@ CREATE TABLE share_token (
     created_at   TEXT NOT NULL
 );
 
+CREATE TABLE auth_session (
+    id          TEXT PRIMARY KEY,
+    patient_id  TEXT NOT NULL REFERENCES patient(id) ON DELETE CASCADE,
+    token_hash  TEXT NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL
+);
+
+CREATE TABLE page_text (
+    document_id TEXT NOT NULL REFERENCES document(id) ON DELETE CASCADE,
+    page        INTEGER NOT NULL CHECK (page >= 1),
+    text        TEXT NOT NULL,
+    engine      TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (document_id, page)
+);
+
 CREATE INDEX idx_doc_patient_date ON document(patient_id, collection_date);
 CREATE INDEX idx_doc_status       ON document(status);
 CREATE INDEX idx_obs_analyte      ON observation(analyte_id, document_id);
@@ -164,6 +186,9 @@ CREATE INDEX idx_hwf_doc_status   ON handwriting_field(document_id, status);
 CREATE INDEX idx_egress_doc       ON egress(document_id, ts);
 CREATE INDEX idx_jobs_state       ON jobs(state, ts);
 CREATE INDEX idx_share_patient    ON share_token(patient_id, expires_at);
+CREATE UNIQUE INDEX idx_patient_username ON patient(username COLLATE NOCASE)
+    WHERE username IS NOT NULL;
+CREATE INDEX idx_auth_session_patient ON auth_session(patient_id, expires_at);
 
 CREATE TRIGGER audit_no_update
 BEFORE UPDATE ON audit
@@ -211,6 +236,6 @@ BEGIN
     SELECT RAISE(ABORT, 'SI-02: no numeric laboratory value from a handwritten document');
 END;
 
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 COMMIT;

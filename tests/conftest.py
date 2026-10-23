@@ -35,7 +35,11 @@ def no_network(monkeypatch):
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    return Settings(db_path=tmp_path / "smriti.db", upload_dir=tmp_path / "uploads")
+    return Settings(
+        db_path=tmp_path / "smriti.db",
+        upload_dir=tmp_path / "uploads",
+        worker_enabled=False,
+    )
 
 
 @pytest.fixture

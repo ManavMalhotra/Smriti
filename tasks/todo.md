@@ -4,17 +4,20 @@ Ordered by dependency. One task per line, one owner, one test. Do not start a ph
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the next phase.
 
+Current slice: PR-03a adds per-patient accounts and a partial P2 local extraction pipeline while the P1 ethics/20-document gate remains open. It does not close the gate and makes no accuracy claims.
+
 ---
 
 ## Week 1 — Foundation
 
 - [x] `pyproject.toml` / `requirements.txt`: core deps pinned (fastapi, uvicorn, pydantic, sqlalchemy, python-multipart, httpx, pytest)
 - [x] NumPy / OpenCV / PyMuPDF / Pillow added for P1 intake
-- [ ] PaddleOCR / PaddlePaddle / RapidFuzz added at P2 start
-- [x] `smriti/config.py`: every key from plan §4, loaded once, recorded per run
-- [x] `smriti/db.py`: SQLite WAL, `foreign_keys=ON`, schema v1 with 11 tables (SRS §3.4)
-- [x] `smriti/models.py`: Pydantic v2 models for patient, document, observation, directive, medication, egress
-- [x] `smriti/main.py`: app factory, static mount, profile switch
+- [x] PaddleOCR / PaddlePaddle added; RapidFuzz still deferred
+- [x] `smriti/config.py`: every key from plan §4, loaded once, recorded per run; auth TTL/attempt settings added
+- [x] `smriti/db.py`: SQLite WAL, `foreign_keys=ON`, schema v2 with 13 tables (SRS §3.4)
+- [x] `smriti/models.py`: Pydantic v2 models for patient, document, observation, directive, medication, egress, auth payloads
+- [x] `smriti/main.py`: app factory, static mount, profile switch, worker startup
+- [x] Per-patient accounts: scrypt hashes, hashed session tokens, HttpOnly cookie, ownership checks
 - [x] `tests/conftest.py`: temp DB, temp upload dir, loopback-only network guard
 - [x] CI: pytest on push; fail on non-loopback network call
 - [ ] Ethics pack submitted (OR-01)
@@ -26,10 +29,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
-- [x] Vite + Tailwind + Recharts shell renders the fixture (patient mode; Recharts lazy-loads when a result has more than one point; 18 Vitest + axe tests)
-- [x] Keyboard focus management and WCAG AA contrast on summary + intake (NFR-09, pulled forward from Week 13)
-- [x] Local intake form: create patient, upload JPEG/PNG/PDF with local-only consent, queued status and page preview (pulled forward from Week 6)
-- [x] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed and implemented
+- [x] Vite + Tailwind + Recharts shell renders the fixture and the live summary (patient mode; Recharts lazy-loads when a result has more than one point; 24 Vitest + axe tests)
+- [x] Keyboard focus management and WCAG AA contrast on summary + intake + auth (NFR-09, pulled forward from Week 13)
+- [x] Account gate: register/sign-in, signed-in patient header, sign-out
+- [x] Local intake form: authenticated upload JPEG/PNG/PDF with local-only consent, automatic type detection, 2 s polling, extracted fields and page text (pulled forward from Week 6)
+- [x] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed and implemented, ownership-checked
 - [ ] **Probe A** — `python -m smriti.candidates --probe`: PP-OCRv6 over 10 handwritten drug lines; record output and top-3
 - [ ] **Probe B** — preprocessing A/B over 20 docs: baseline vs perspective+deskew+CLAHE+upscale
 - [ ] Record both probe results in `docs/evaluation.md`
@@ -43,13 +47,14 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 - [x] `smriti/ingest.py`: content hash, idempotent write, page split, job row
 - [x] `POST /api/documents`, `POST /api/documents/{id}/consent`
 - [x] `GET /api/documents/{id}/page/{n}`, `GET /api/documents/{id}`, `GET /api/jobs/{id}`
-- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`: 36 passed
+- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`; full backend suite 52 passed
 - [ ] 20 real documents in hand, consent rows recorded
 - [~] **GATE** five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
 
 ## Week 4 — OCR baseline
 
-- [ ] `smriti/ocr.py`: PaddleOCR wrapper, words + normalised boxes, engine string
+- [x] `smriti/ocr.py`: PaddleOCR wrapper, words + normalised boxes, engine string
+- [x] `smriti/classify.py`: local document-type classifier with confidence
 - [ ] `smriti/engines.py`: registry with versions
 - [ ] `eval/run_eval.py` skeleton + `eval/metrics.py` (F1, CER) on a 5-doc fixture
 - [ ] `tests/test_eval_smoke.py`: runs offline
@@ -61,19 +66,20 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 ## Week 5 — Extraction
 
 - [ ] `smriti/assembly.py`: table regions, rows, columns from OCR output
-- [ ] `smriti/extract.py`: template rules → candidates
+- [~] `smriti/extract.py`: line-based printed lab/medication rules → review candidates; table assembly and directives open
 - [ ] `smriti/resolution.py`: synonym → range → unit, 2-of-3 agreement
-- [ ] `data/analyte_map.csv`: 30 analytes, Indian synonyms, LOINC, specimen, timing
+- [~] `data/analyte_map.csv`: initial analyte synonyms, units, display names; LOINC/specimen/timing open
 - [ ] `data/brand_lexicon.csv`: derived from the 40 prescriptions, not invented
 - [ ] Directive grammar v1: `action_type × timing_type` patterns
-- [ ] `tests/test_extract.py`, `tests/test_directives.py` span offsets
+- [x] `tests/test_extract.py`: line rules, bboxes, review status
+- [ ] `tests/test_directives.py` span offsets
 - [ ] **GATE** one printed document parsed end to end
 
 ## Week 6 — Review loop and first evaluation
 
 - [ ] `POST /api/observations/{id}/review` + audit rows
 - [ ] Review UI: field, crop, candidates, accept/correct/reject, keyboard path
-- [~] Upload UI + 2 s job polling (FR-JOB-04); local create/upload/consent/page preview done, polling and review UI open
+- [~] Upload UI + 2 s job polling (FR-JOB-04); authenticated upload/consent/page preview/polling/extracted fields done, review UI open
 - [ ] `tests/test_review.py`
 - [ ] **M1 evaluation** on 40 docs: field F1, end-to-end, material errors
 - [ ] Medication F1 baseline; lexicon coverage reported (FR-MED-05)
@@ -136,7 +142,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 ## Week 13 — Usability and bug pass
 
 - [ ] 5–8 participant sessions: time-to-answer vs paper folder
-- [~] Keyboard-only and contrast audit (NFR-09); axe + summary/intake manual pass done, review/clinician/share screens open
+- [~] Keyboard-only and contrast audit (NFR-09); axe + summary/intake/auth pass done, review/clinician/share screens open
 - [ ] Bug pass on the cut list
 - [ ] **GATE** usability data in hand
 

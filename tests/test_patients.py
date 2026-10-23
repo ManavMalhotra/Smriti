@@ -13,19 +13,99 @@ def _count(app, table: str) -> int:
         return conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one()
 
 
-def test_create_patient(client, app):
-    response = client.post("/api/patients", json={"alias": "P-01", "sex": "F"})
+def test_register_patient_creates_account_and_session(client, app):
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "alias": "P-01",
+            "sex": "F",
+            "username": "patient-one",
+            "password": "test-password-123",
+        },
+    )
     assert response.status_code == 201
 
     body = response.json()
     assert body["alias"] == "P-01"
     assert body["sex"] == "F"
+    assert body["username"] == "patient-one"
     assert _count(app, "patient") == 1
     assert _count(app, "audit") == 1
+    assert client.get("/api/auth/me").json()["id"] == body["id"]
+
+
+def test_first_registration_claims_a_legacy_patient(client, app):
+    with app.state.engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO patient (id, alias, created_at) "
+                "VALUES ('legacy-1', 'hm', '2026-10-20T00:00:00Z')"
+            )
+        )
+
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "alias": "P-01",
+            "username": "patient-one",
+            "password": "test-password-123",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["id"] == "legacy-1"
+    assert _count(app, "patient") == 1
+    assert client.get("/api/patients/legacy-1/summary").status_code == 200
+
+
+def test_duplicate_username_is_rejected_case_insensitively(client):
+    payload = {
+        "alias": "P-01",
+        "username": "Patient.One",
+        "password": "test-password-123",
+    }
+    assert client.post("/api/auth/register", json=payload).status_code == 201
+    duplicate = client.post(
+        "/api/auth/register",
+        json={**payload, "username": "patient.one"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "username_taken"
+
+
+def test_login_and_logout(client):
+    payload = {
+        "alias": "P-01",
+        "username": "patient-one",
+        "password": "test-password-123",
+    }
+    assert client.post("/api/auth/register", json=payload).status_code == 201
+    assert client.post("/api/auth/logout").status_code == 204
+    assert client.get("/api/auth/me").status_code == 401
+
+    bad = client.post(
+        "/api/auth/login",
+        json={"username": "patient-one", "password": "wrong-password"},
+    )
+    assert bad.status_code == 401
+
+    good = client.post(
+        "/api/auth/login",
+        json={"username": "patient-one", "password": "test-password-123"},
+    )
+    assert good.status_code == 200
+    assert good.json()["alias"] == "P-01"
+    assert client.get("/api/auth/me").status_code == 200
 
 
 def test_delete_patient_erases_rows_and_files(client, app, settings):
-    patient_id = client.post("/api/patients", json={"alias": "P-01"}).json()["id"]
+    patient_id = client.post(
+        "/api/auth/register",
+        json={
+            "alias": "P-01",
+            "username": "patient-one",
+            "password": "test-password-123",
+        },
+    ).json()["id"]
 
     page_dir = settings.upload_dir / "abc123"
     page_dir.mkdir(parents=True)
@@ -72,16 +152,32 @@ def test_delete_patient_erases_rows_and_files(client, app, settings):
     assert deleted == 1
 
 
-def test_delete_unknown_patient_returns_404(client):
+def test_delete_another_patient_is_forbidden(client):
+    own = client.post(
+        "/api/auth/register",
+        json={
+            "alias": "P-01",
+            "username": "patient-one",
+            "password": "test-password-123",
+        },
+    ).json()
     response = client.delete("/api/patients/does-not-exist")
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "not_found"
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
+    assert client.get(f"/api/patients/{own['id']}/summary").status_code == 200
 
 
 def test_demo_profile_is_read_only(settings):
     demo_app = create_app(replace(settings, profile="demo"))
     with TestClient(demo_app) as demo_client:
-        response = demo_client.post("/api/patients", json={"alias": "P-01"})
+        response = demo_client.post(
+            "/api/auth/register",
+            json={
+                "alias": "P-01",
+                "username": "patient-one",
+                "password": "test-password-123",
+            },
+        )
         assert response.status_code == 403
         assert response.json()["error"]["code"] == "demo_read_only"
 
@@ -90,7 +186,10 @@ def test_demo_profile_is_read_only(settings):
 
 
 def test_validation_error_uses_contract_shape(client):
-    response = client.post("/api/patients", json={})
+    response = client.post(
+        "/api/auth/register",
+        json={"username": "patient-one", "password": "test-password-123"},
+    )
     assert response.status_code == 400
     error = response.json()["error"]
     assert error["code"] == "validation_error"

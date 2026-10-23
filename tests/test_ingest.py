@@ -260,6 +260,7 @@ def test_consent_endpoint_updates_scope_and_audits(client, app):
 
 
 def test_consent_for_unknown_document_returns_404(client):
+    make_patient(client)
     response = client.post(
         "/api/documents/missing/consent",
         json={"scope": "local", "version": "1.0"},

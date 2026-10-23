@@ -1,4 +1,3 @@
-import summary from "../fixtures/summary.json";
 import Header from "../components/Header";
 import Problems from "../components/Problems";
 import Medications from "../components/Medications";
@@ -7,24 +6,64 @@ import Pending from "../components/Pending";
 import Documents from "../components/Documents";
 import Footer from "../components/Footer";
 
-export default function Dashboard({ data = summary, onAdd }) {
+const EMPTY_COVERAGE = {
+  first_date: null,
+  last_date: null,
+  quarters: [],
+  gaps: [],
+};
+
+export default function Dashboard({
+  data,
+  patient,
+  onAdd,
+  onSignOut,
+  loading = false,
+  error = "",
+}) {
+  const view = data ?? {
+    patient,
+    coverage: EMPTY_COVERAGE,
+    problems: [],
+    medications: [],
+    results: [],
+    pending: [],
+    documents: [],
+  };
+
   return (
     <div className="shell">
-      <Header patient={data.patient} coverage={data.coverage} onAdd={onAdd} />
+      <Header
+        patient={view.patient}
+        coverage={view.coverage}
+        onAdd={onAdd}
+        onSignOut={onSignOut}
+      />
 
       <main>
+        {loading ? (
+          <p className="empty" role="status">
+            Loading summary…
+          </p>
+        ) : null}
+        {error ? (
+          <div className="alert" role="alert">
+            {error}
+          </div>
+        ) : null}
+
         <div className="zone-grid two">
-          <Problems problems={data.problems} />
-          <Medications medications={data.medications} />
+          <Problems problems={view.problems} />
+          <Medications medications={view.medications} />
         </div>
 
         <div className="zone-grid">
-          <Results results={data.results} />
+          <Results results={view.results} />
         </div>
 
         <div className="zone-grid two">
-          <Pending pending={data.pending} />
-          <Documents documents={data.documents} />
+          <Pending pending={view.pending} />
+          <Documents documents={view.documents} />
         </div>
       </main>
 

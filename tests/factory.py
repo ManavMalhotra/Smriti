@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -96,9 +97,22 @@ def exif_gps_jpeg(image: Image.Image) -> bytes:
     return jpeg_bytes(image, exif=exif)
 
 
-def make_patient(client) -> str:
-    response = client.post("/api/patients", json={"alias": "P-01"})
-    assert response.status_code == 201
+def make_patient(
+    client,
+    alias: str = "P-01",
+    *,
+    username: str | None = None,
+    password: str = "test-password-123",
+) -> str:
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "alias": alias,
+            "username": username or f"user-{uuid.uuid4().hex[:10]}",
+            "password": password,
+        },
+    )
+    assert response.status_code == 201, response.text
     return response.json()["id"]
 
 

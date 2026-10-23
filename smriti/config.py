@@ -24,7 +24,14 @@ class Settings:
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     resolver_enabled: bool = False
     resolver_provider: str = "local_rules"
-    ocr_model: str = "PP-OCRv6_small"
+    ocr_model: str = "PP-OCRv5_mobile"
+    ocr_det_model: str = "PP-OCRv5_mobile_det"
+    ocr_rec_model: str = "en_PP-OCRv5_mobile_rec"
+    worker_enabled: bool = True
+    worker_poll_seconds: float = 2.0
+    session_ttl_days: int = 7
+    login_attempts: int = 5
+    login_window_minutes: int = 5
     quality_blur: float = 100.0
     quality_min_short_edge: int = 1000
     quality_max_aspect: float = 4.0
@@ -53,7 +60,14 @@ def load_settings() -> Settings:
         # The demo profile never egresses, whatever the environment says.
         resolver_enabled=False if profile == "demo" else _bool("SMRITI_RESOLVER_ENABLED", False),
         resolver_provider=os.getenv("SMRITI_RESOLVER_PROVIDER", "local_rules"),
-        ocr_model=os.getenv("SMRITI_OCR_MODEL", "PP-OCRv6_small"),
+        ocr_model=os.getenv("SMRITI_OCR_MODEL", "PP-OCRv5_mobile"),
+        ocr_det_model=os.getenv("SMRITI_OCR_DET_MODEL", "PP-OCRv5_mobile_det"),
+        ocr_rec_model=os.getenv("SMRITI_OCR_REC_MODEL", "en_PP-OCRv5_mobile_rec"),
+        worker_enabled=_bool("SMRITI_WORKER_ENABLED", True),
+        worker_poll_seconds=float(os.getenv("SMRITI_WORKER_POLL_SECONDS", "2")),
+        session_ttl_days=int(os.getenv("SMRITI_SESSION_TTL_DAYS", "7")),
+        login_attempts=int(os.getenv("SMRITI_LOGIN_ATTEMPTS", "5")),
+        login_window_minutes=int(os.getenv("SMRITI_LOGIN_WINDOW_MINUTES", "5")),
         quality_blur=float(os.getenv("SMRITI_QUALITY_BLUR", "100")),
         quality_min_short_edge=int(os.getenv("SMRITI_QUALITY_MIN_SHORT_EDGE", "1000")),
         quality_max_aspect=float(os.getenv("SMRITI_QUALITY_MAX_ASPECT", "4.0")),
