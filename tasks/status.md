@@ -58,6 +58,7 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 - [x] Printed flags shown verbatim; no computed "abnormal" copy
 - [x] Source path panel shows document, page, and normalised bbox; fixture IDs have no page image yet
 - [x] Local intake form: create patient, upload JPEG/PNG/PDF with local-only consent, queued status and page preview
+- [x] NFR-09 keyboard focus on view changes, upload result, and form resets; WCAG AA text and 3:1 control borders on summary + intake
 - [x] 18 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
 - [ ] Live summary API, fixture page-image link, 2 s job polling/review UI, clinician mode, and sharing (blocked on P3/P4/P5)
 
@@ -128,6 +129,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-02 | `feat/p1-intake` | Intake: preprocess, quality, handwriting detection, idempotent ingest, upload/consent/page/job endpoints | 36 passed | merged `50b3b08`, tag `p1-intake` |
 | PR-06a | `feat/dashboard-shell` | Week 2 fixture-only dashboard shell: Vite/React/Tailwind/Recharts, four zones, source path, Vitest + axe | 11 frontend, 36 Python, build passed | merged `80d179d`, tag `dashboard-shell` |
 | PR-02a | `feat/intake-ui` | Local intake UI for P1: create patient, upload with local-only consent, queued result, page-1 preview, duplicate/error states | 18 frontend, 36 Python, build passed, live upload, 1280/390 visual checks | merged `0c0e343`, tag `intake-ui` |
+| PR-02b | `feat/a11y-hardening` | NFR-09: focus handoff on navigation, result, reset, and patient change; WCAG 1.4.11 control borders | 18 frontend, 36 Python, build passed, manual Tab/focus and contrast check | merged `60c017c`, tag `a11y-ui` |
 | PR-03 | `feat/p2-extraction` | OCR, assembly, extraction, resolver, review loop, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -137,6 +139,8 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-09 | `feat/p8-evaluation` | Full offline evaluation, CIs, risk–coverage, report artifacts | planned | not started |
 
 PR-06a is a fixture-only slice of PR-06, pulled forward so the UI contract is visible before the summary API. The full dashboard remains PR-06.
+
+PR-02b is a pulled-forward NFR-09 slice of Week 13 for the screens that exist. The full accessibility audit still covers review, clinician, and share screens when they are built.
 
 ### PR-01 commits
 
@@ -170,6 +174,11 @@ PR-06a is a fixture-only slice of PR-06, pulled forward so the UI contract is vi
 - `5f12da0` test(web): cover intake upload, errors, duplicates, and a11y
 - Merge: `0c0e343` (tag `intake-ui`)
 
+### PR-02b commits
+
+- `47111ce` fix(web): manage focus and meet control contrast on view changes
+- Merge: `60c017c` (tag `a11y-ui`)
+
 ## Known limits at P1 + local UI
 
 - Handwriting detection is a conservative heuristic, not a trained classifier; a shadowed printed page can fall back to `handwritten`.
@@ -181,6 +190,7 @@ PR-06a is a fixture-only slice of PR-06, pulled forward so the UI contract is vi
 - The current patient is kept only in the intake screen's React state; returning to the summary discards it. The summary/intake switch is not a URL route, so refresh returns to the sample summary.
 - The intake form sends the optional `doc_date` only; `collection_date` is not collected yet.
 - Uploads stay queued because no OCR worker exists; the intake UI shows the queued state and does not poll.
+- NFR-09 is audited on the summary and intake screens only; the review, clinician, and share screens still need keyboard and contrast passes when they are built.
 - Patient mode only; job polling, review UI, clinician mode, sharing, and live source images remain in PR-06/Week 6.
 - The trend chart only renders with more than one point; the fixture's single HbA1c point stays a table.
 - Source paths show the normalised box, but fixture IDs are not seeded, so no page image is linked.

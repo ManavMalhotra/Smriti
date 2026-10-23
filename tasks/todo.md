@@ -27,6 +27,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
 - [x] Vite + Tailwind + Recharts shell renders the fixture (patient mode; Recharts lazy-loads when a result has more than one point; 18 Vitest + axe tests)
+- [x] Keyboard focus management and WCAG AA contrast on summary + intake (NFR-09, pulled forward from Week 13)
 - [x] Local intake form: create patient, upload JPEG/PNG/PDF with local-only consent, queued status and page preview (pulled forward from Week 6)
 - [x] `POST /api/documents` + `GET /api/jobs/{id}` shapes agreed and implemented
 - [ ] **Probe A** — `python -m smriti.candidates --probe`: PP-OCRv6 over 10 handwritten drug lines; record output and top-3
@@ -135,7 +136,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the nex
 ## Week 13 — Usability and bug pass
 
 - [ ] 5–8 participant sessions: time-to-answer vs paper folder
-- [~] Keyboard-only and contrast audit (NFR-09); automated axe pass done, manual session open
+- [~] Keyboard-only and contrast audit (NFR-09); axe + summary/intake manual pass done, review/clinician/share screens open
 - [ ] Bug pass on the cut list
 - [ ] **GATE** usability data in hand
 
