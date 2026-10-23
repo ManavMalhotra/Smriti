@@ -1,0 +1,78 @@
+const dateFormatter = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+export function formatDate(value) {
+  if (!value) return "—";
+  const date = value.length === 10 ? `${value}T00:00:00Z` : value;
+  return dateFormatter.format(new Date(date));
+}
+
+export function formatSex(sex) {
+  return { F: "Female", M: "Male", O: "Other" }[sex] ?? "Sex not recorded";
+}
+
+export function formatRange(low, high) {
+  if (low != null && high != null) return `${low}–${high}`;
+  if (low != null) return `≥ ${low}`;
+  if (high != null) return `≤ ${high}`;
+  return "—";
+}
+
+export function docTypeLabel(type) {
+  return (
+    {
+      lab_report: "Lab report",
+      prescription: "Prescription",
+      pharmacy: "Pharmacy slip",
+      other: "Document",
+    }[type] ?? type
+  );
+}
+
+export function statusLabel(status) {
+  return (
+    {
+      queued: "Queued",
+      processing: "Processing",
+      done: "Processed",
+      failed: "Failed",
+      rejected_quality: "Rejected",
+    }[status] ?? status
+  );
+}
+
+export function actionLabel(action) {
+  return (
+    {
+      review: "Review",
+      test: "Test",
+      appointment: "Appointment",
+      other: "Action",
+    }[action] ?? action
+  );
+}
+
+export function anchorLabel(anchor) {
+  return (
+    {
+      collection_date: "collection date",
+      doc_date: "document date",
+      unknown: "unknown date",
+    }[anchor] ?? anchor
+  );
+}
+
+export function stateLabel(state) {
+  return (
+    {
+      open: "Open",
+      done: "Done",
+      superseded: "Superseded",
+      unknown_date: "Date unknown",
+    }[state] ?? state
+  );
+}
