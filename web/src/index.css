@@ -788,6 +788,87 @@ tr:last-child td {
   border: 0;
 }
 
+.auth-main {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+  padding: 48px 0;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 560px;
+  padding: 32px;
+}
+
+.auth-card h1 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.auth-card h1:focus {
+  outline: none;
+}
+
+.auth-lede {
+  max-width: 52ch;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.auth-card .form-actions {
+  justify-content: space-between;
+}
+
+.extracted-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.extracted-section h3,
+.extracted-text h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.extracted-text {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.extracted-text summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.extracted-text h3 {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.extracted-text pre {
+  margin: 6px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface-quiet);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 @media (min-width: 640px) {
   .form-grid.two {
     grid-template-columns: repeat(2, minmax(0, 1fr));

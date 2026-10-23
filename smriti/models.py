@@ -31,9 +31,27 @@ class PatientCreate(StrictModel):
     dob: date | None = None
 
 
+class RegisterRequest(StrictModel):
+    username: str = Field(
+        min_length=3,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9._-]+$",
+    )
+    password: str = Field(min_length=8, max_length=128)
+    alias: str = Field(min_length=1, max_length=64)
+    sex: Sex | None = None
+    dob: date | None = None
+
+
+class LoginRequest(StrictModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+
 class PatientOut(StrictModel):
     id: str
     alias: str
+    username: str | None = None
     sex: Sex | None = None
     dob: date | None = None
     created_at: datetime
@@ -55,13 +73,22 @@ class DocumentOut(StrictModel):
     page_count: int = Field(ge=1)
     quality_score: float | None = None
     status: DocumentStatus
+    doc_type_confidence: float | None = None
+    processed_at: datetime | None = None
     created_at: datetime
+
+
+class PageTextOut(StrictModel):
+    page: int = Field(ge=1)
+    text: str
+    engine: str
 
 
 class ObservationOut(StrictModel):
     id: str
     document_id: str
     analyte_id: str | None = None
+    label_raw: str | None = None
     value_num: str | None = None
     value_text: str | None = None
     unit_raw: str | None = None

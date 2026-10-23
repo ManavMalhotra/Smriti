@@ -10,9 +10,10 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api.routers import documents, jobs, patients
+from api.routers import auth, documents, jobs, patients
 from smriti.config import BASE_DIR, Settings, load_settings
 from smriti.db import create_db_engine, init_db
+from smriti.worker import start_worker
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -25,7 +26,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        worker = start_worker(app.state.engine, settings)
         yield
+        if worker is not None:
+            stop, thread = worker
+            stop.set()
+            thread.join(timeout=5)
         app.state.engine.dispose()
 
     app = FastAPI(title="Smriti", version="0.1.0", lifespan=lifespan)
@@ -54,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             error["field"] = field
         return JSONResponse(status_code=400, content={"error": error})
 
+    app.include_router(auth.router, prefix="/api")
     app.include_router(patients.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")

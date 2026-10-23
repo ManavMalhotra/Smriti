@@ -1,47 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import Footer from "../components/Footer";
-import { docTypeLabel, statusLabel } from "../lib/format";
+import { requestJson } from "../lib/api";
+import { docTypeLabel, formatRange, statusLabel } from "../lib/format";
 
 const DOC_TYPES = [
+  ["auto", "Detect automatically"],
   ["lab_report", "Lab report"],
   ["prescription", "Prescription"],
   ["pharmacy", "Pharmacy slip"],
   ["other", "Other document"],
 ];
 
-async function requestJson(url, options) {
-  let response;
-  try {
-    response = await fetch(url, options);
-  } catch {
-    throw new Error("Could not reach the local server. Check that it is running and try again.");
-  }
-
-  let data = null;
-  try {
-    data = await response.json();
-  } catch {
-    // A non-JSON body is treated as a generic failure below.
-  }
-  return { response, data };
+function _jobStatus(job, fallback) {
+  if (!job) return fallback;
+  return {
+    queued: "queued",
+    running: "processing",
+    done: "done",
+    failed: "failed",
+  }[job.state] ?? fallback;
 }
 
-export default function Intake({ onDone }) {
-  const [patient, setPatient] = useState(null);
-  const [alias, setAlias] = useState("");
-  const [sex, setSex] = useState("");
+function _fieldLabel(field) {
+  return field.label_raw || field.analyte_id || "Unmapped field";
+}
+
+export default function Intake({ patient, onDone, onSignOut }) {
   const [file, setFile] = useState(null);
-  const [docType, setDocType] = useState("lab_report");
+  const [docType, setDocType] = useState("auto");
   const [docDate, setDocDate] = useState("");
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [job, setJob] = useState(null);
   const fileInputRef = useRef(null);
-  const aliasInputRef = useRef(null);
   const resultHeadingRef = useRef(null);
   const hadResult = useRef(false);
-  const previousPatient = useRef(patient);
 
   useEffect(() => {
     if (result) {
@@ -53,11 +49,38 @@ export default function Intake({ onDone }) {
   }, [result]);
 
   useEffect(() => {
-    if (previousPatient.current && !patient) {
-      aliasInputRef.current?.focus();
+    if (!result?.jobId) return;
+    let cancelled = false;
+    let timer;
+
+    async function poll() {
+      try {
+        const nextJob = await requestJson(`/api/jobs/${result.jobId}`);
+        if (cancelled) return;
+        setJob(nextJob);
+        if (nextJob.state === "done") {
+          const document = await requestJson(`/api/documents/${result.documentId}`);
+          if (!cancelled) setDetail(document);
+          return;
+        }
+        if (nextJob.state === "failed") {
+          if (!cancelled) setError(nextJob.error || "Local extraction failed.");
+          return;
+        }
+        timer = setTimeout(poll, 2000);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not check extraction progress.");
+        }
+      }
     }
-    previousPatient.current = patient;
-  }, [patient]);
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [result?.jobId, result?.documentId]);
 
   function clearFile() {
     setFile(null);
@@ -66,27 +89,18 @@ export default function Intake({ onDone }) {
 
   function resetUpload() {
     setResult(null);
+    setDetail(null);
+    setJob(null);
     setError("");
     setDocDate("");
     setConsent(false);
     clearFile();
   }
 
-  function changePatient() {
-    setPatient(null);
-    setAlias("");
-    setSex("");
-    resetUpload();
-  }
-
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
 
-    if (!patient && !alias.trim()) {
-      setError("Enter a patient alias.");
-      return;
-    }
     if (!file) {
       setError("Choose a document file.");
       return;
@@ -98,62 +112,52 @@ export default function Intake({ onDone }) {
 
     setBusy(true);
     try {
-      let activePatient = patient;
-      if (!activePatient) {
-        const { response, data } = await requestJson("/api/patients", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ alias: alias.trim(), sex: sex || null }),
-        });
-        if (!response.ok) {
-          throw new Error(data?.error?.message ?? "Could not create the patient record.");
-        }
-        activePatient = data;
-        setPatient(data);
-      }
-
       const body = new FormData();
-      body.set("patient_id", activePatient.id);
+      body.set("patient_id", patient.id);
       body.set("file", file);
-      body.set("doc_type", docType);
       body.set("consent_scope", "local");
+      if (docType !== "auto") body.set("doc_type", docType);
       if (docDate) body.set("doc_date", docDate);
 
-      const { response, data } = await requestJson("/api/documents", {
-        method: "POST",
-        body,
-      });
-
-      if (response.status === 409) {
+      try {
+        const data = await requestJson("/api/documents", { method: "POST", body });
         setResult({
-          duplicate: true,
-          patient: activePatient,
-          documentId: data?.document_id ?? "",
-          pages: 0,
-          status: data?.status ?? "queued",
-          docType,
+          duplicate: false,
+          patient,
+          documentId: data.document_id,
+          jobId: data.job_id,
+          pages: data.pages,
+          status: data.status,
+          docType: docType === "auto" ? null : docType,
         });
-        return;
+      } catch (err) {
+        if (err?.status === 409 && err.data?.duplicate) {
+          setResult({
+            duplicate: true,
+            patient,
+            documentId: err.data.document_id ?? "",
+            jobId: null,
+            pages: err.data.page_count ?? 0,
+            status: err.data.status ?? "queued",
+            docType: err.data.doc_type ?? null,
+          });
+          return;
+        }
+        throw err;
       }
-
-      if (!response.ok) {
-        throw new Error(data?.error?.message ?? "The document could not be uploaded.");
-      }
-
-      setResult({
-        duplicate: false,
-        patient: activePatient,
-        documentId: data.document_id,
-        pages: data.pages,
-        status: data.status,
-        docType,
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The upload failed. Try again.");
     } finally {
       setBusy(false);
     }
   }
+
+  const status = _jobStatus(job, result?.status);
+  const detectedType = detail?.doc_type ?? result?.docType;
+  const pageCount = detail?.page_count ?? result?.pages;
+  const observations = detail?.observations ?? [];
+  const medications = detail?.medications ?? [];
+  const pageText = detail?.page_text ?? [];
 
   return (
     <div className="shell">
@@ -163,6 +167,11 @@ export default function Intake({ onDone }) {
           <button type="button" className="text-button" onClick={onDone}>
             Back to summary
           </button>
+          {onSignOut ? (
+            <button type="button" className="text-button" onClick={onSignOut}>
+              Sign out
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -170,195 +179,227 @@ export default function Intake({ onDone }) {
         <header className="page-head">
           <h1 tabIndex={-1}>Add a document</h1>
           <p>
-            Create a local patient record and upload a lab report, prescription, or pharmacy slip.
-            The summary preview uses sample data until the live summary API is connected.
+            Upload a lab report, prescription, or pharmacy slip for {patient.alias}. Smriti
+            detects the document type and extracts fields locally on this device.
           </p>
         </header>
 
-      {result ? (
-        <section className="panel" aria-labelledby="intake-result-heading">
-          <div className="result-head">
-            <div>
-              <h2 id="intake-result-heading" ref={resultHeadingRef} tabIndex={-1}>
-                {result.duplicate ? "Already stored" : "Document queued"}
-              </h2>
-              <p className="result-ref">
-                {result.duplicate
-                  ? "This file matches a document already on this device. No new document was added."
-                  : `The file is stored locally and queued for ${result.patient.alias}.`}
-              </p>
+        {result ? (
+          <section className="panel" aria-labelledby="intake-result-heading">
+            <div className="result-head">
+              <div>
+                <h2 id="intake-result-heading" ref={resultHeadingRef} tabIndex={-1}>
+                  {result.duplicate
+                    ? "Already stored"
+                    : detail
+                      ? "Document processed"
+                      : "Document queued"}
+                </h2>
+                <p className="result-ref">
+                  {result.duplicate
+                    ? "This file matches a document already in your records. No new document was added."
+                    : detail
+                      ? "Local OCR and rule extraction finished. Review the fields below."
+                      : `The file is stored locally and queued for ${patient.alias}.`}
+                </p>
+              </div>
+              <span className="pill">{statusLabel(status)}</span>
             </div>
-            <span className="pill">{statusLabel(result.status)}</span>
-          </div>
 
-          <dl className="result-meta">
-            {!result.duplicate ? (
+            <dl className="result-meta">
               <div>
                 <dt>Patient</dt>
-                <dd>{result.patient.alias}</dd>
+                <dd>{patient.alias}</dd>
               </div>
-            ) : null}
-            <div>
-              <dt>Document</dt>
-              <dd className="mono">{result.documentId || "—"}</dd>
-            </div>
-            <div>
-              <dt>Type</dt>
-              <dd>{docTypeLabel(result.docType)}</dd>
-            </div>
-            {!result.duplicate ? (
               <div>
-                <dt>Pages</dt>
-                <dd>{result.pages || "—"}</dd>
+                <dt>Document</dt>
+                <dd className="mono">{result.documentId || "—"}</dd>
+              </div>
+              <div>
+                <dt>Type</dt>
+                <dd>{detectedType ? docTypeLabel(detectedType) : "Detecting…"}</dd>
+              </div>
+              {!result.duplicate ? (
+                <div>
+                  <dt>Pages</dt>
+                  <dd>{pageCount || "—"}</dd>
+                </div>
+              ) : null}
+            </dl>
+
+            {!result.duplicate && pageCount > 0 ? (
+              <div className="page-preview-wrap">
+                <img
+                  className="page-preview"
+                  src={`/api/documents/${result.documentId}/page/1`}
+                  alt={`First page of the uploaded ${docTypeLabel(detectedType ?? "other")}`}
+                />
+                <p className="result-note">
+                  First page only. Images and text stay on this device.
+                </p>
               </div>
             ) : null}
-          </dl>
 
-          {!result.duplicate && result.pages > 0 ? (
-            <div className="page-preview-wrap">
-              <img
-                className="page-preview"
-                src={`/api/documents/${result.documentId}/page/1`}
-                alt={`First page of the uploaded ${docTypeLabel(result.docType)}`}
-              />
-              <p className="result-note">
-                First page only. Extraction is queued; OCR and review arrive in P2.
+            {!result.duplicate && !detail && !error ? (
+              <p className="result-note" role="status">
+                Reading the page locally. Extracted fields will appear here.
               </p>
-            </div>
-          ) : null}
+            ) : null}
 
-          <div className="form-actions">
-            <button type="button" className="button-secondary" onClick={resetUpload}>
-              Add another document
-            </button>
-            <button type="button" className="text-button" onClick={onDone}>
-              Back to summary
-            </button>
-          </div>
-        </section>
-      ) : (
-        <form className="panel" onSubmit={handleSubmit} noValidate>
-          {patient ? (
+            {observations.length > 0 ? (
+              <section className="extracted-section" aria-labelledby="fields-heading">
+                <h3 id="fields-heading">Extracted fields</h3>
+                <div className="table-wrap">
+                  <table>
+                    <caption className="sr-only">Extracted fields from this document</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Field</th>
+                        <th scope="col">Value</th>
+                        <th scope="col">Unit</th>
+                        <th scope="col">Reference</th>
+                        <th scope="col">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {observations.map((field) => (
+                        <tr key={field.id}>
+                          <td>{_fieldLabel(field)}</td>
+                          <td className="mono">{field.value_text ?? field.value_num ?? "—"}</td>
+                          <td>{field.unit_raw ?? "—"}</td>
+                          <td>{formatRange(field.ref_low, field.ref_high)}</td>
+                          <td>{statusLabel(field.status)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="result-note">Extracted locally; review is required before relying on a value.</p>
+              </section>
+            ) : null}
+
+            {medications.length > 0 ? (
+              <section className="extracted-section" aria-labelledby="medications-heading">
+                <h3 id="medications-heading">Extracted medications</h3>
+                <ul className="list">
+                  {medications.map((medication) => (
+                    <li key={medication.id}>
+                      <span>{medication.brand_raw}</span>
+                      <span className="unit">
+                        {[medication.dose, medication.freq].filter(Boolean).join(" · ")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {pageText.length > 0 ? (
+              <details className="extracted-text">
+                <summary>Extracted text</summary>
+                {pageText.map((page) => (
+                  <div key={page.page}>
+                    <h3>Page {page.page}</h3>
+                    <pre>{page.text || "No text detected."}</pre>
+                  </div>
+                ))}
+              </details>
+            ) : null}
+
+            <div className="form-actions">
+              <button type="button" className="button-secondary" onClick={resetUpload}>
+                Add another document
+              </button>
+              <button type="button" className="text-button" onClick={onDone}>
+                Back to summary
+              </button>
+            </div>
+          </section>
+        ) : (
+          <form className="panel" onSubmit={handleSubmit} noValidate>
             <div className="patient-summary">
               <div>
                 <p className="eyebrow">Patient</p>
                 <p>{patient.alias}</p>
               </div>
-              <button type="button" className="text-button" onClick={changePatient}>
-                Change patient
-              </button>
+              <span className="field-note">Signed in</span>
             </div>
-          ) : (
+
             <fieldset>
-              <legend>Patient</legend>
+              <legend>Document</legend>
               <div className="form-grid two">
-                <div className="field">
-                  <label htmlFor="patient-alias">Patient alias</label>
+                <div className="field field-wide">
+                  <label htmlFor="document-file">Document file</label>
                   <input
-                    ref={aliasInputRef}
-                    id="patient-alias"
-                    name="alias"
-                    type="text"
-                    value={alias}
-                    onChange={(event) => setAlias(event.target.value)}
-                    maxLength={64}
-                    autoComplete="off"
+                    ref={fileInputRef}
+                    id="document-file"
+                    name="file"
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                     required
                   />
-                  <p className="field-note">Use initials or a study ID, not a full name.</p>
+                  <p className="field-note">JPEG, PNG, or PDF. The file stays on this device.</p>
                 </div>
                 <div className="field">
-                  <label htmlFor="patient-sex">Sex</label>
+                  <label htmlFor="document-type">Document type</label>
                   <select
-                    id="patient-sex"
-                    name="sex"
-                    value={sex}
-                    onChange={(event) => setSex(event.target.value)}
+                    id="document-type"
+                    name="doc_type"
+                    value={docType}
+                    onChange={(event) => setDocType(event.target.value)}
                   >
-                    <option value="">Not recorded</option>
-                    <option value="F">Female</option>
-                    <option value="M">Male</option>
-                    <option value="O">Other</option>
+                    {DOC_TYPES.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
+                  <p className="field-note">Automatic detection runs after upload.</p>
+                </div>
+                <div className="field">
+                  <label htmlFor="document-date">Document date</label>
+                  <input
+                    id="document-date"
+                    name="doc_date"
+                    type="date"
+                    value={docDate}
+                    onChange={(event) => setDocDate(event.target.value)}
+                  />
+                  <p className="field-note">Optional. Use the date printed on the document.</p>
                 </div>
               </div>
-            </fieldset>
-          )}
 
-          <fieldset>
-            <legend>Document</legend>
-            <div className="form-grid two">
-              <div className="field field-wide">
-                <label htmlFor="document-file">Document file</label>
+              <label className="checkbox-field" htmlFor="consent">
                 <input
-                  ref={fileInputRef}
-                  id="document-file"
-                  name="file"
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  id="consent"
+                  name="consent"
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(event) => setConsent(event.target.checked)}
                   required
                 />
-                <p className="field-note">JPEG, PNG, or PDF. The file stays on this device.</p>
+                <span>
+                  I have permission to store and process this document locally. No image or text
+                  leaves this device.
+                </span>
+              </label>
+            </fieldset>
+
+            {error ? (
+              <div className="alert" role="alert">
+                {error}
               </div>
-              <div className="field">
-                <label htmlFor="document-type">Document type</label>
-                <select
-                  id="document-type"
-                  name="doc_type"
-                  value={docType}
-                  onChange={(event) => setDocType(event.target.value)}
-                >
-                  {DOC_TYPES.map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="document-date">Document date</label>
-                <input
-                  id="document-date"
-                  name="doc_date"
-                  type="date"
-                  value={docDate}
-                  onChange={(event) => setDocDate(event.target.value)}
-                />
-                <p className="field-note">Optional. Use the date printed on the document.</p>
-              </div>
+            ) : null}
+
+            <div className="form-actions">
+              <button type="submit" className="button-primary" disabled={busy}>
+                {busy ? "Uploading…" : "Upload document"}
+              </button>
+              <span className="field-note">The server checks file type, size, and image quality.</span>
             </div>
-
-            <label className="checkbox-field" htmlFor="consent">
-              <input
-                id="consent"
-                name="consent"
-                type="checkbox"
-                checked={consent}
-                onChange={(event) => setConsent(event.target.checked)}
-                required
-              />
-              <span>
-                I have permission to store and process this document locally. No image or text
-                leaves this device.
-              </span>
-            </label>
-          </fieldset>
-
-          {error ? (
-            <div className="alert" role="alert">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="form-actions">
-            <button type="submit" className="button-primary" disabled={busy}>
-              {busy ? "Uploading…" : "Upload document"}
-            </button>
-            <span className="field-note">The server checks file type, size, and image quality.</span>
-          </div>
-        </form>
-      )}
+          </form>
+        )}
       </main>
 
       <Footer />

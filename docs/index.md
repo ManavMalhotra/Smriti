@@ -11,7 +11,7 @@ Reading order and authority. If two documents disagree, the one higher in this t
 | 5 | `tasks/todo.md` | Ordered work, week by week, with gates | Draft |
 | 6 | `docs/architecture.md` | Runtime structure, trust boundaries | **Done** |
 | 7 | `docs/data-model.md` | Schema, state machines, indexes | **Done** |
-| 8 | `docs/API.md` | The 15 endpoints and the frozen summary payload | **Done** |
+| 8 | `docs/API.md` | Implemented auth/document/job/summary endpoints, the frozen summary payload, and contract-only review/handwriting/share shapes | **Done** |
 | 9 | `docs/evaluation.md` | Truth set, metrics, pre-registered thresholds | Pending |
 | 10 | `docs/test-plan.md` | Verification matrix, CI gates | Pending |
 | 11 | `docs/annotation-guide.md` | How to label documents, kappa protocol | **Done** |

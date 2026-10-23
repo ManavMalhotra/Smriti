@@ -184,11 +184,16 @@ def _save_page(bgr, path: Path) -> None:
     Image.fromarray(rgb).save(path, format="WEBP", quality=90, method=4)
 
 
-def _find_duplicate(engine: Engine, content_hash: str) -> tuple[str, str] | None:
+def _find_duplicate(
+    engine: Engine, patient_id: str, content_hash: str
+) -> tuple[str, str] | None:
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT id, status FROM document WHERE content_hash = :hash"),
-            {"hash": content_hash},
+            text(
+                "SELECT id, status FROM document "
+                "WHERE patient_id = :patient_id AND content_hash = :hash"
+            ),
+            {"patient_id": patient_id, "hash": content_hash},
         ).first()
     return (row[0], row[1]) if row else None
 
@@ -204,6 +209,7 @@ def ingest_upload(
     doc_date: date | None = None,
     collection_date: date | None = None,
     consent_version: str = "1.0",
+    actor: str = "operator",
 ) -> IngestResult:
     if len(data) == 0:
         raise IngestError("invalid_file", "The uploaded file is empty.")
@@ -220,8 +226,10 @@ def ingest_upload(
     if patient is None:
         raise IngestError("not_found", f"Unknown patient {patient_id}.")
 
-    content_hash = hashlib.sha256(data).hexdigest()
-    duplicate = _find_duplicate(engine, content_hash)
+    content_hash = hashlib.sha256(
+        patient_id.encode("utf-8") + b"\0" + data
+    ).hexdigest()
+    duplicate = _find_duplicate(engine, patient_id, content_hash)
     if duplicate is not None:
         return IngestResult(
             document_id=duplicate[0],
@@ -294,18 +302,19 @@ def ingest_upload(
                         (id, entity, entity_id, field, "old", "new", actor, ts)
                     VALUES
                         (:id, 'consent', :entity_id, 'granted', NULL, :new,
-                         'operator', :ts)
+                         :actor, :ts)
                     """
                 ),
                 {
                     "id": str(uuid.uuid4()),
                     "entity_id": consent_id,
                     "new": consent_scope,
+                    "actor": actor,
                     "ts": created_at,
                 },
             )
     except IntegrityError:
-        duplicate = _find_duplicate(engine, content_hash)
+        duplicate = _find_duplicate(engine, patient_id, content_hash)
         if duplicate is not None:
             return IngestResult(
                 document_id=duplicate[0],
@@ -481,6 +490,8 @@ def record_consent(
     document_id: str,
     scope: str,
     version: str,
+    *,
+    actor: str = "operator",
 ) -> dict | None:
     with engine.begin() as conn:
         document = conn.execute(
@@ -542,7 +553,7 @@ def record_consent(
                     (id, entity, entity_id, field, "old", "new", actor, ts)
                 VALUES
                     (:id, 'consent', :entity_id, 'scope', :old, :new,
-                     'operator', :ts)
+                     :actor, :ts)
                 """
             ),
             {
@@ -550,6 +561,7 @@ def record_consent(
                 "entity_id": consent_id,
                 "old": old_scope,
                 "new": scope,
+                "actor": actor,
                 "ts": granted_at,
             },
         )

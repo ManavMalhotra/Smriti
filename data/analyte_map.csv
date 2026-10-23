@@ -1,0 +1,31 @@
+analyte_id,display,unit,synonyms
+hba1c,HbA1c,%,hba1c|hb a1c|glycated hemoglobin|glycosylated hemoglobin|glycated haemoglobin
+fasting_glucose,Fasting glucose,mg/dL,fasting glucose|fasting blood sugar|fbs|glucose fasting|fasting plasma glucose
+glucose,Glucose,mg/dL,random glucose|random blood sugar|rbs|blood sugar|glucose
+hemoglobin,Hemoglobin,g/dL,hemoglobin|haemoglobin|hb
+wbc,White blood cells,cells/µL,white blood cells|wbc|total leucocyte count|tlc|leucocyte count|leukocyte count
+platelets,Platelets,cells/µL,platelets|platelet count|plt
+creatinine,Creatinine,mg/dL,creatinine|serum creatinine
+urea,Urea,mg/dL,blood urea|urea
+sodium,Sodium,mEq/L,sodium|na+
+potassium,Potassium,mEq/L,potassium|k+
+chloride,Chloride,mEq/L,chloride|cl-
+total_cholesterol,Total cholesterol,mg/dL,total cholesterol|cholesterol total|cholesterol
+ldl,LDL cholesterol,mg/dL,ldl cholesterol|ldl-c|ldl
+hdl,HDL cholesterol,mg/dL,hdl cholesterol|hdl-c|hdl
+triglycerides,Triglycerides,mg/dL,triglycerides|triglyceride|tg
+alt,ALT,U/L,alt|sgpt|alanine aminotransferase
+ast,AST,U/L,ast|sgot|aspartate aminotransferase
+alp,Alkaline phosphatase,U/L,alkaline phosphatase|alp|alk phos
+bilirubin_total,Total bilirubin,mg/dL,total bilirubin|bilirubin total|bilirubin
+albumin,Albumin,g/dL,albumin|serum albumin
+tsh,TSH,µIU/mL,tsh|thyroid stimulating hormone|thyrotropin
+t3,T3,ng/dL,t3|triiodothyronine
+t4,T4,µg/dL,t4|thyroxine
+vitamin_d,Vitamin D,ng/mL,vitamin d|25-hydroxy vitamin d|25 oh vitamin d
+vitamin_b12,Vitamin B12,pg/mL,vitamin b12|b12|cobalamin
+crp,C-reactive protein,mg/L,c-reactive protein|crp|hs-crp
+esr,ESR,mm/hr,esr|erythrocyte sedimentation rate
+uric_acid,Uric acid,mg/dL,uric acid|serum uric acid
+calcium,Calcium,mg/dL,calcium|serum calcium
+phosphorus,Phosphorus,mg/dL,phosphorus|phosphate|serum phosphate

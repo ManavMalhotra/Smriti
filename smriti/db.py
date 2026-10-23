@@ -11,7 +11,15 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Connection, Engine
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 1
+MIGRATIONS_PATH = Path(__file__).with_name("migrations")
+SCHEMA_VERSION = 2
+
+
+def _migration_path(version: int) -> Path:
+    matches = sorted(MIGRATIONS_PATH.glob(f"{version:03d}_*.sql"))
+    if len(matches) != 1:
+        raise RuntimeError(f"missing migration for schema version {version}")
+    return matches[0]
 
 
 def init_db(db_path: str | Path) -> None:
@@ -23,14 +31,25 @@ def init_db(db_path: str | Path) -> None:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version == SCHEMA_VERSION:
             return
-        if version != 0:
+        if version > SCHEMA_VERSION:
             raise RuntimeError(f"unsupported schema version {version}")
-        existing = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()
-        if existing:
-            raise RuntimeError("database has tables but no schema version")
-        conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        if version == 0:
+            existing = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            if existing:
+                raise RuntimeError("database has tables but no schema version")
+            conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        else:
+            for next_version in range(version + 1, SCHEMA_VERSION + 1):
+                conn.executescript(
+                    _migration_path(next_version).read_text(encoding="utf-8")
+                )
+        migrated = conn.execute("PRAGMA user_version").fetchone()[0]
+        if migrated != SCHEMA_VERSION:
+            raise RuntimeError(
+                f"schema migration ended at version {migrated}, expected {SCHEMA_VERSION}"
+            )
     finally:
         conn.close()
 

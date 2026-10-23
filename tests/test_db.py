@@ -16,6 +16,8 @@ EXPECTED_TABLES = {
     "audit",
     "jobs",
     "share_token",
+    "auth_session",
+    "page_text",
 }
 
 
@@ -75,7 +77,7 @@ def test_schema_creates_all_tables(app):
             )
         }
         assert EXPECTED_TABLES <= names
-        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 1
+        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 2
         assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
 
 

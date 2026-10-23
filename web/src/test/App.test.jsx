@@ -1,22 +1,78 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import Dashboard from "../pages/Dashboard";
 import summary from "../fixtures/summary.json";
 
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  };
+}
+
+function authenticatedFetch() {
+  return vi.fn((url) => {
+    if (url === "/api/auth/me") return Promise.resolve(jsonResponse(summary.patient));
+    if (url === `/api/patients/${summary.patient.id}/summary`) {
+      return Promise.resolve(jsonResponse(summary));
+    }
+    return Promise.reject(new Error(`Unexpected request: ${url}`));
+  });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("App navigation", () => {
   it("opens the intake form and returns to the summary", async () => {
+    vi.stubGlobal("fetch", authenticatedFetch());
     const user = userEvent.setup();
     render(<App />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "P-01" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add document" }));
     expect(
       screen.getByRole("heading", { level: 1, name: "Add a document" }),
     ).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Back to summary" }));
     expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toHaveFocus();
+  });
+
+  it("shows sign in when there is no session and loads the summary after login", async () => {
+    const fetchMock = vi.fn((url) => {
+      if (url === "/api/auth/me") {
+        return Promise.resolve(
+          jsonResponse({ error: { code: "unauthorized", message: "Sign in." } }, 401),
+        );
+      }
+      if (url === "/api/auth/login") return Promise.resolve(jsonResponse(summary.patient));
+      if (url === `/api/patients/${summary.patient.id}/summary`) {
+        return Promise.resolve(jsonResponse(summary));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Username"), "patient-one");
+    await user.type(screen.getByLabelText("Password"), "test-password-123");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "P-01" }),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/patients/${summary.patient.id}/summary`,
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
   });
 });
 

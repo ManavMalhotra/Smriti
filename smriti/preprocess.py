@@ -103,8 +103,10 @@ def estimate_skew(bgr: np.ndarray) -> float:
     coordinates = cv2.findNonZero(mask)
     if coordinates is None or len(coordinates) < 50:
         return 0.0
-    angle = cv2.minAreaRect(coordinates)[-1]
-    angle = -(90 + angle) if angle < -45 else -angle
+    raw_angle = cv2.minAreaRect(coordinates)[-1]
+    # minAreaRect uses different angle conventions across OpenCV releases.
+    # Fold the rectangle angle into (-45, 45] so the result is version-stable.
+    angle = (90 - raw_angle + 45) % 90 - 45
     return float(angle) if abs(angle) <= 15 else 0.0
 
 

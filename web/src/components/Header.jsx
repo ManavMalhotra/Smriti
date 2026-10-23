@@ -1,14 +1,14 @@
 import CoverageStrip from "./CoverageStrip";
 import { formatDate, formatSex } from "../lib/format";
 
-export default function Header({ patient, coverage, onAdd }) {
-  const gap = coverage.gaps?.[0];
+export default function Header({ patient, coverage, onAdd, onSignOut }) {
+  const gap = coverage?.gaps?.[0];
   const meta = [
-    patient.sex ? formatSex(patient.sex) : null,
-    patient.dob ? `Born ${formatDate(patient.dob)}` : null,
+    patient?.sex ? formatSex(patient.sex) : null,
+    patient?.dob ? `Born ${formatDate(patient.dob)}` : null,
   ].filter(Boolean);
   const range =
-    coverage.first_date && coverage.last_date
+    coverage?.first_date && coverage?.last_date
       ? `${formatDate(coverage.first_date)} – ${formatDate(coverage.last_date)}`
       : "No dated documents";
 
@@ -23,12 +23,17 @@ export default function Header({ patient, coverage, onAdd }) {
               Add document
             </button>
           ) : null}
+          {onSignOut ? (
+            <button type="button" className="text-button" onClick={onSignOut}>
+              Sign out
+            </button>
+          ) : null}
         </div>
       </div>
 
       <div className="patient">
         <div>
-          <h1 tabIndex={-1}>{patient.alias}</h1>
+          <h1 tabIndex={-1}>{patient?.alias ?? "Patient"}</h1>
           {meta.length > 0 ? <p className="patient-meta">{meta.join(" · ")}</p> : null}
         </div>
         <p className="patient-range">{range}</p>

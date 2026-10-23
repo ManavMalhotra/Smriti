@@ -62,7 +62,7 @@ No Docker Desktop during development — it consumes memory the pipeline needs (
 | `SMRITI_UPLOAD_DIR` | `data/uploads` | outside the static root (NFR-06) |
 | `SMRITI_RESOLVER_ENABLED` | `false` | per document as well as global (FR-EGR-05) |
 | `SMRITI_RESOLVER_PROVIDER` | `local_rules` | `self_hosted`, `sarvam`, `gemini` |
-| `SMRITI_OCR_MODEL` | `PP-OCRv6_small` | fallback `PP-OCRv5_mobile` |
+| `SMRITI_OCR_MODEL` | `PP-OCRv5_mobile` | cached det/rec models; no cloud download at runtime |
 | `SMRITI_QUALITY_BLUR` | `100` | Laplacian variance floor |
 | `SMRITI_HWR_MARGIN` | `0.15` | below this, abstain (FR-HWR-04) |
 

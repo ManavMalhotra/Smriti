@@ -43,9 +43,9 @@ The gap is not capture. The gap is **trust and measurement**.
 
 ## 4. Scope
 
-**In scope:** printed lab reports, printed prescriptions, pharmacy printouts; 30 analytes across CBC, LFT, KFT, lipid profile, HbA1c, TSH; bounding-box provenance; four directive timing classes; one-page dashboard in patient and clinician modes; PIN-protected sharing with audit; assisted handwriting transcription.
+**In scope:** printed lab reports, printed prescriptions, pharmacy printouts; 30 analytes across CBC, LFT, KFT, lipid profile, HbA1c, TSH; bounding-box provenance; four directive timing classes; one-page dashboard in patient and clinician modes; PIN-protected sharing with audit; assisted handwriting transcription; local per-patient account isolation on one device.
 
-**Out of scope:** imaging, cultures, serology, histopathology; diagnosis or treatment advice; drug interaction checking; guideline-driven scheduling; ABDM/FHIR export; multi-tenancy; chatbots; any cloud processing of document images.
+**Out of scope:** imaging, cultures, serology, histopathology; diagnosis or treatment advice; drug interaction checking; guideline-driven scheduling; ABDM/FHIR export; clinic multi-tenancy or RBAC; chatbots; any cloud processing of document images.
 
 ## 5. Methodology
 

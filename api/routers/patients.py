@@ -1,4 +1,4 @@
-"""Patient creation and erase-all. Deletion is irreversible by design."""
+"""Patient summary and erase-all. A patient can only access their own record."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import text
 
 from api.errors import api_error
-from smriti.models import PatientCreate, PatientOut
+from smriti.auth import SESSION_COOKIE, audit, current_patient, require_same_patient
+from smriti.models import Summary
+from smriti.summary import build_summary
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -19,68 +21,31 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@router.post("", status_code=201, response_model=PatientOut)
-def create_patient(payload: PatientCreate, request: Request) -> PatientOut:
-    settings = request.app.state.settings
-    if settings.demo:
-        api_error(403, "demo_read_only", "The demo profile is read-only.")
-
-    patient_id = str(uuid.uuid4())
-    created_at = _now()
-    with request.app.state.engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO patient (id, alias, dob, sex, created_at)
-                VALUES (:id, :alias, :dob, :sex, :created_at)
-                """
-            ),
-            {
-                "id": patient_id,
-                "alias": payload.alias,
-                "dob": payload.dob.isoformat() if payload.dob else None,
-                "sex": payload.sex,
-                "created_at": created_at,
-            },
-        )
-        conn.execute(
-            text(
-                """
-                INSERT INTO audit (id, entity, entity_id, field, "old", "new", actor, ts)
-                VALUES (:id, 'patient', :entity_id, 'created', NULL, :new, 'operator', :ts)
-                """
-            ),
-            {
-                "id": str(uuid.uuid4()),
-                "entity_id": patient_id,
-                "new": payload.alias,
-                "ts": created_at,
-            },
-        )
-
-    return PatientOut(
-        id=patient_id,
-        alias=payload.alias,
-        sex=payload.sex,
-        dob=payload.dob,
-        created_at=created_at,
-    )
+@router.get("/{patient_id}/summary", response_model=Summary)
+def get_summary(
+    patient_id: str,
+    request: Request,
+    patient: dict = Depends(current_patient),
+) -> Summary:
+    require_same_patient(patient_id, patient)
+    with request.app.state.engine.connect() as conn:
+        return build_summary(conn, patient_id)
 
 
 @router.delete("/{patient_id}", status_code=204)
-def delete_patient(patient_id: str, request: Request) -> None:
+def delete_patient(
+    patient_id: str,
+    request: Request,
+    response: Response,
+    patient: dict = Depends(current_patient),
+) -> None:
     settings = request.app.state.settings
     if settings.demo:
         api_error(403, "demo_read_only", "The demo profile is read-only.")
+    require_same_patient(patient_id, patient)
 
     engine = request.app.state.engine
     with engine.begin() as conn:
-        exists = conn.execute(
-            text("SELECT id FROM patient WHERE id = :id"), {"id": patient_id}
-        ).first()
-        if exists is None:
-            api_error(404, "not_found", f"Unknown patient {patient_id}.")
-
         image_paths = [
             row[0]
             for row in conn.execute(
@@ -89,14 +54,14 @@ def delete_patient(patient_id: str, request: Request) -> None:
             )
         ]
         conn.execute(text("DELETE FROM patient WHERE id = :id"), {"id": patient_id})
-        conn.execute(
-            text(
-                """
-                INSERT INTO audit (id, entity, entity_id, field, "old", "new", actor, ts)
-                VALUES (:id, 'patient', :entity_id, 'deleted', NULL, 'true', 'operator', :ts)
-                """
-            ),
-            {"id": str(uuid.uuid4()), "entity_id": patient_id, "ts": _now()},
+        audit(
+            conn,
+            entity="patient",
+            entity_id=patient_id,
+            field="deleted",
+            old=None,
+            new="true",
+            actor=patient["username"] or patient["alias"],
         )
 
     # shortcut: files are removed after the DB commit; a crash between the two leaves
@@ -112,3 +77,5 @@ def delete_patient(patient_id: str, request: Request) -> None:
             shutil.rmtree(target)
         elif target.exists():
             target.unlink()
+
+    response.delete_cookie(SESSION_COOKIE, path="/")

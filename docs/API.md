@@ -1,6 +1,6 @@
 # API Contract
 
-Status: frozen at week 2. Additions permitted; breaking changes are not (SRS §5.4.4).
+Status: v1.2. The auth, document, job, patient-summary, and erase-all endpoints are implemented. Sections marked **contract-only** are frozen shapes for later phases and are not served yet.
 
 Base path: `/api`. All requests and responses are JSON except the upload (`multipart/form-data`) and the page-image response (`image/webp`).
 
@@ -8,7 +8,9 @@ Base path: `/api`. All requests and responses are JSON except the upload (`multi
 
 ## 1. Conventions
 
-- **No authentication on the local API.** The deployment model is one operator on one machine. The share link has its own PIN.
+- **Every route except `/auth/register`, `/auth/login`, `/auth/logout`, and `/health` requires a patient session.** The session is an `HttpOnly`, `SameSite=Strict` cookie named `smriti_session`; the token is stored hashed in SQLite.
+- **A patient can only access their own records.** Patient-id routes return `403` for another patient; document, page, and job routes return `404` to avoid confirming existence.
+- **Local HTTP only by default.** The cookie is not `Secure`; terminate TLS and enable `Secure` before exposing the app beyond localhost.
 - **No pagination.** 40 documents is not a paging problem.
 - **Every observation-bearing response includes provenance.** A value without `document_id`, `page`, and `bbox` is a contract violation (SRS §3.5.1).
 - **Errors** are always:
@@ -20,134 +22,70 @@ Base path: `/api`. All requests and responses are JSON except the upload (`multi
 | Code | HTTP | Meaning |
 |---|---|---|
 | `validation_error` | 400 | Malformed request |
+| `unauthorized` | 401 | No session cookie |
+| `session_expired` | 401 | Session missing or expired |
+| `invalid_credentials` | 401 | Wrong username or password |
+| `forbidden` | 403 | Another patient's record |
 | `consent_required` | 403 | No consent row for this document |
-| `demo_read_only` | 403 | Upload or write attempted in `demo` profile |
+| `demo_read_only` | 403 | Write attempted in `demo` profile |
 | `not_found` | 404 | Unknown id |
-| `duplicate` | 409 | Content hash already ingested (returns the existing document) |
-| `share_locked` | 423 | Five failed PIN attempts |
-| `job_failed` | 409 | Retry required |
-| `resolver_unavailable` | 200 | Document processed locally; review queue populated |
+| `duplicate` | 409 | Same patient's content hash already ingested |
+| `username_taken` | 409 | Username already exists (case-insensitive) |
+| `too_large` | 413 | Upload exceeds the byte limit |
+| `quality_rejected` | 422 | Quality gate rejected the upload |
+| `too_many_pages` | 422 | PDF exceeds the page limit |
+| `invalid_file` | 422 | Empty, corrupt, or unsupported file |
+| `page_too_large` | 422 | Rendered page exceeds the pixel limit |
+| `too_many_attempts` | 429 | Login throttled |
+| `ingest_failed` | 500 | Ingestion failed |
 
 - **Ids** are opaque UUID strings. No endpoint accepts a filename.
 
 ---
 
-## 2. Patients
+## 2. Accounts
 
-### `POST /api/patients`
-
-```json
-{ "alias": "P-01", "sex": "F", "dob": null }
-```
-
-`201` → `{ "id": "…", "alias": "P-01", "created_at": "2026-10-23T09:00:00Z" }`
-
-`alias` is the only display identifier. No endpoint accepts a real name.
-
-### `DELETE /api/patients/{id}`
-
-Erase-all: rows and files, one transaction, one audit row. `204`.
-
-Required by the consent protocol (`docs/ethics-consent.md` §7). Irreversible.
-
----
-
-## 3. Documents
-
-### `POST /api/documents`
-
-`multipart/form-data`:
-
-| Field | Type | Required |
-|---|---|---|
-| `patient_id` | string | yes |
-| `file` | binary | yes |
-| `doc_type` | `lab_report` \| `prescription` \| `pharmacy` \| `other` | yes |
-| `doc_date` | ISO date | no |
-| `collection_date` | ISO date | no |
-| `consent_scope` | `local` \| `local_plus_projection` | yes |
-
-**No `capture_type` field.** It is derived server-side (`FR-ING-02`).
-
-`202`:
-
-```json
-{ "document_id": "…", "job_id": "…", "pages": 2, "status": "queued" }
-```
-
-`409 duplicate` → `{ "document_id": "…", "status": "done", "duplicate": true }`
-
-`422 quality_rejected` → the document row is kept with `status=rejected_quality`, no job is created, and no page files are stored. The message names the failing page and check.
-
-`403 demo_read_only` when `SMRITI_PROFILE=demo`.
-
-### `POST /api/documents/{id}/consent`
-
-```json
-{ "scope": "local_plus_projection", "version": "1.0" }
-```
-
-`201` → consent row. Required before the job is created; a document without consent is never queued.
-
-### `GET /api/documents/{id}`
+### `POST /api/auth/register`
 
 ```json
 {
-  "id": "…",
-  "doc_type": "lab_report",
-  "capture_type": "printed",
-  "doc_date": "2025-11-02",
-  "collection_date": "2025-11-02",
-  "page_count": 2,
-  "quality_score": 0.91,
-  "status": "done",
-  "consent": { "scope": "local", "granted_at": "…", "revoked_at": null },
-  "egress": [],
-  "pages": [{ "page": 1, "url": "/api/documents/…/page/1" }]
+  "alias": "P-01",
+  "username": "patient-one",
+  "password": "at-least-8-characters",
+  "sex": "F",
+  "dob": null
 }
 ```
 
-### `GET /api/documents/{id}/page/{n}`
+`201` → `{ "id": "…", "alias": "P-01", "username": "patient-one", "sex": "F", "dob": null, "created_at": "…" }`
 
-Binary `image/webp`. `404` when the document, page, or stored image is missing; rejected and failed documents have no page images. `Cache-Control: private, max-age=3600`.
+Sets the session cookie. `username` is 3–32 characters (`A-Z a-z 0-9 . _ -`), unique case-insensitively; `alias` is the only display identifier. No real name is accepted.
 
----
+On a v1 database, the first registration claims the sole patient with no username so existing local records remain reachable. If more than one unowned patient exists, a new patient is created and the old records are not automatically exposed.
 
-## 4. Jobs
-
-### `GET /api/jobs/{id}`
+### `POST /api/auth/login`
 
 ```json
-{ "id": "…", "state": "running", "page": 1, "total": 2, "error": null }
+{ "username": "patient-one", "password": "…" }
 ```
 
-`state ∈ queued | running | done | failed`. UI polls every 2 s and stops on a terminal state.
+`200` → the same patient object; sets the session cookie. `401 invalid_credentials`; `429 too_many_attempts` after five failures in five minutes for that username.
+
+### `POST /api/auth/logout`
+
+`204`. Deletes the session row and clears the cookie.
+
+### `GET /api/auth/me`
+
+`200` → the signed-in patient object. `401 unauthorized` or `401 session_expired`.
 
 ---
 
-## 5. Review
-
-### `POST /api/observations/{id}/review`
-
-```json
-{ "action": "correct", "value_num": "13.4", "unit_norm": "g/dL", "reason": "OCR read 13.2" }
-```
-
-| Action | Body | Result |
-|---|---|---|
-| `accept` | — | `status=auto`, audit row |
-| `correct` | `value_num`, optional `unit_norm` | `status=auto`, original retained (DR-03) |
-| `reject` | `reason` | `status=rejected`, never charted |
-
-`200` → the updated observation plus the recomputed summary fragment (`FR-REV-05`).
-
-Handwritten fields are reviewed through §8, not here.
-
----
-
-## 6. Summary — the frozen payload
+## 3. Patients
 
 ### `GET /api/patients/{id}/summary`
+
+Requires the signed-in patient's own id. `403 forbidden` otherwise.
 
 Seven keys, no more. Frozen in week 2; validated in CI against `web/src/fixtures/summary.json` (NFR-12).
 
@@ -213,9 +151,138 @@ Rules the fixture enforces:
 - `pending` contains no item whose `due_date` was already past at extraction.
 - `coverage.gaps[].text` states a duration, never an interpretation.
 
+**Current implementation limits:** `problems` is always `[]`; `pending` is populated only from stored directives; extraction currently writes no directives. `results` includes observations with `status='review'` so extracted data is visible. They are not clinically validated; P3 normalisation/safety gates and the review endpoint are not implemented.
+
+### `DELETE /api/patients/{id}`
+
+Requires the signed-in patient's own id. Erase-all: rows and files, one transaction, one audit row. `204`; clears the session cookie. Required by the consent protocol (`docs/ethics-consent.md` §7). Irreversible. `403 demo_read_only` in the demo profile.
+
 ---
 
-## 7. Deep views
+## 4. Documents
+
+### `POST /api/documents`
+
+Requires the session cookie. `multipart/form-data`:
+
+| Field | Type | Required |
+|---|---|---|
+| `patient_id` | string | yes — must be the signed-in patient |
+| `file` | binary | yes |
+| `doc_type` | `lab_report` \| `prescription` \| `pharmacy` \| `other` | no |
+| `doc_date` | ISO date | no |
+| `collection_date` | ISO date | no |
+| `consent_scope` | `local` \| `local_plus_projection` | yes |
+
+Omit `doc_type` (or send `other`) to let the local worker classify the document. **No `capture_type` field.** It is derived server-side (`FR-ING-02`).
+
+`202`:
+
+```json
+{ "document_id": "…", "job_id": "…", "pages": 2, "status": "queued" }
+```
+
+`409 duplicate` → `{ "document_id": "…", "status": "done", "duplicate": true, "doc_type": "lab_report", "page_count": 2 }`
+
+Duplicates are scoped to the signed-in patient: the content hash includes the patient id, so the same bytes can exist for two patients without being returned as each other's duplicate.
+
+`422 quality_rejected` → the document row is kept with `status=rejected_quality`, no job is created, and no page files are stored. The message names the failing page and check.
+
+`403 demo_read_only` when `SMRITI_PROFILE=demo`.
+
+### `POST /api/documents/{id}/consent`
+
+Requires ownership.
+
+```json
+{ "scope": "local_plus_projection", "version": "1.0" }
+```
+
+`201` → consent row. Uploads already write a consent row from `consent_scope`; this endpoint records a later change. A document without consent is never queued.
+
+### `GET /api/documents/{id}`
+
+Requires ownership.
+
+```json
+{
+  "id": "…",
+  "patient_id": "…",
+  "doc_type": "lab_report",
+  "doc_type_confidence": 0.91,
+  "capture_type": "printed",
+  "doc_date": "2025-11-02",
+  "collection_date": "2025-11-02",
+  "lab_name": null,
+  "page_count": 2,
+  "quality_score": 0.91,
+  "status": "done",
+  "processed_at": "…",
+  "created_at": "…",
+  "consent": { "scope": "local", "granted_at": "…", "revoked_at": null },
+  "egress": [],
+  "page_text": [{ "page": 1, "text": "…", "engine": "paddle" }],
+  "observations": [
+    { "id": "…", "analyte_id": "hba1c", "label_raw": "HbA1c",
+      "value_num": "8.9", "value_text": "8.9", "unit_raw": "%",
+      "unit_norm": null, "ref_low": "4", "ref_high": "6",
+      "flag_printed": "H", "bbox": [0.1, 0.2, 0.3, 0.4], "page": 1,
+      "engine": "paddle+local-rules-v1", "confidence": 0.98,
+      "status": "review", "reason": "Extracted locally; review required.",
+      "mapping_rule": "exact", "created_at": "…" }
+  ],
+  "medications": [],
+  "pages": [{ "page": 1, "url": "/api/documents/…/page/1" }]
+}
+```
+
+Extracted observations are always `review`; the current worker never writes `auto`. Handwritten documents produce no numeric observations.
+
+### `GET /api/documents/{id}/page/{n}`
+
+Requires ownership. Binary `image/webp`. `404` when the document, page, or stored image is missing; rejected and failed documents have no page images. `Cache-Control: private, max-age=3600`.
+
+---
+
+## 5. Jobs
+
+### `GET /api/jobs/{id}`
+
+Requires ownership.
+
+```json
+{ "id": "…", "state": "running", "page": 1, "total": 2, "error": null }
+```
+
+`state ∈ queued | running | done | failed`. The UI polls every 2 s and stops on a terminal state. A failed job includes a short error string; the document status is `failed`.
+
+---
+
+## 6. Review — contract-only
+
+Not served yet. The current worker writes every extracted observation as `review`.
+
+### `POST /api/observations/{id}/review`
+
+```json
+{ "action": "correct", "value_num": "13.4", "unit_norm": "g/dL", "reason": "OCR read 13.2" }
+```
+
+| Action | Body | Result |
+|---|---|---|
+| `accept` | — | `status=auto`, audit row |
+| `correct` | `value_num`, optional `unit_norm` | `status=auto`, original retained (DR-03) |
+| `reject` | `reason` | `status=rejected`, never charted |
+
+`200` → the updated observation plus the recomputed summary fragment (`FR-REV-05`).
+
+Handwritten fields are reviewed through §8, not here.
+
+---
+
+## 7. Deep views, handwriting, and share — contract-only
+
+These shapes remain frozen for later phases; no route in this section is implemented.
 
 ### `GET /api/patients/{id}/observations?analyte=hba1c`
 
@@ -241,10 +308,6 @@ Full series for one analyte, all points, all statuses except `rejected` (which a
 ```
 
 Creates a new row. Never updates an existing one (`FR-MED-02`).
-
----
-
-## 8. Handwriting
 
 ### `GET /api/documents/{id}/handwriting-fields`
 
@@ -280,10 +343,6 @@ Creates a new row. Never updates an existing one (`FR-MED-02`).
 
 Every action writes a row with `ms_to_verify`. No action means no state change: a field cannot leave `review` by timeout, default, or batch accept.
 
----
-
-## 9. Share
-
 ### `POST /api/share`
 
 ```json
@@ -304,9 +363,10 @@ Every attempt writes an audit row (`FR-SHR-04`).
 
 ---
 
-## 10. Change log
+## 8. Change log
 
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 23 Oct 2026 | Initial frozen contract: 15 endpoints, seven-key summary payload |
 | 1.1 | 23 Oct 2026 | Add `GET /api/documents/{id}/page/{n}`; document quality-rejection semantics |
+| 1.2 | 23 Oct 2026 | Per-patient accounts and session auth; optional `doc_type`; authenticated document/job/summary routes; duplicate response fields; extracted detail fields; summary API live; review/handwriting/share marked contract-only |
