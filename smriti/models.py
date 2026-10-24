@@ -8,7 +8,18 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Sex = Literal["M", "F", "O"]
-DocType = Literal["lab_report", "prescription", "pharmacy", "other"]
+DocType = Literal[
+    "lab_report",
+    "prescription",
+    "pharmacy",
+    "discharge_summary",
+    "ct",
+    "mri",
+    "xray",
+    "pathology",
+    "radiology",
+    "other",
+]
 CaptureType = Literal["printed", "handwritten"]
 DocumentStatus = Literal["queued", "processing", "done", "failed", "rejected_quality"]
 ObservationStatus = Literal["auto", "review", "rejected"]

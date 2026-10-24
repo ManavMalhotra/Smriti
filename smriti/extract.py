@@ -290,9 +290,18 @@ def extract_document(
     for page_number, words in enumerate(pages, start=1):
         for row in assemble_page(words).rows:
             line = list(row.words)
-            if capture_type == "printed" and doc_type in ("lab_report", "other"):
+            if capture_type == "printed" and doc_type in (
+                "lab_report",
+                "other",
+                "discharge_summary",
+            ):
                 fields.extend(_extract_line(line, page_number, engine))
-            if capture_type == "printed" and doc_type in ("prescription", "pharmacy", "other"):
+            if capture_type == "printed" and doc_type in (
+                "prescription",
+                "pharmacy",
+                "other",
+                "discharge_summary",
+            ):
                 medications.extend(_extract_medications(line))
     # Keep one field per analyte per printed line; OCR often repeats a label.
     unique: dict[tuple[str, str, int], ExtractedField] = {}

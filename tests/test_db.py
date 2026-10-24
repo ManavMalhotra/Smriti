@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+
+from smriti.db import init_db
 
 pytestmark = pytest.mark.integration
 
@@ -79,7 +83,7 @@ def test_schema_creates_all_tables(app):
             )
         }
         assert EXPECTED_TABLES <= names
-        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 2
+        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 3
         assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
 
 
@@ -160,3 +164,120 @@ def test_handwritten_numeric_value_is_rejected(app):
     with pytest.raises(IntegrityError, match="SI-02"):
         with app.state.engine.begin() as conn:
             _insert_observation(conn, status="review", value_num="13.2")
+
+
+_V2_SCHEMA = """
+CREATE TABLE patient (
+    id TEXT PRIMARY KEY,
+    alias TEXT NOT NULL,
+    dob TEXT,
+    sex TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE document (
+    id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL REFERENCES patient(id) ON DELETE CASCADE,
+    doc_type TEXT NOT NULL CHECK (doc_type IN ('lab_report', 'prescription', 'pharmacy', 'other')),
+    capture_type TEXT NOT NULL CHECK (capture_type IN ('printed', 'handwritten')),
+    doc_date TEXT,
+    collection_date TEXT,
+    lab_name TEXT,
+    image_path TEXT NOT NULL,
+    page_count INTEGER NOT NULL DEFAULT 1 CHECK (page_count >= 1),
+    quality_score REAL,
+    quality_json TEXT,
+    content_hash TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'done', 'failed', 'rejected_quality')),
+    doc_type_confidence REAL,
+    processed_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE observation (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES document(id) ON DELETE CASCADE,
+    analyte_id TEXT,
+    label_raw TEXT,
+    value_num TEXT,
+    value_text TEXT,
+    unit_raw TEXT,
+    unit_norm TEXT,
+    ref_low TEXT,
+    ref_high TEXT,
+    flag_printed TEXT,
+    bbox_json TEXT NOT NULL,
+    page INTEGER NOT NULL,
+    engine TEXT NOT NULL,
+    confidence REAL,
+    status TEXT NOT NULL,
+    reason TEXT,
+    mapping_rule TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE page_text (
+    document_id TEXT NOT NULL REFERENCES document(id) ON DELETE CASCADE,
+    page INTEGER NOT NULL CHECK (page >= 1),
+    text TEXT NOT NULL,
+    engine TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (document_id, page)
+);
+CREATE INDEX idx_doc_patient_date ON document(patient_id, collection_date);
+CREATE INDEX idx_doc_status ON document(status);
+PRAGMA user_version = 2;
+"""
+
+
+def test_v2_database_migrates_to_v3(tmp_path):
+    path = tmp_path / "v2.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(_V2_SCHEMA)
+    conn.execute(
+        "INSERT INTO patient (id, alias, created_at) VALUES ('p1', 'P-01', '2026-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO document (id, patient_id, doc_type, capture_type, image_path, "
+        "page_count, content_hash, status, created_at) "
+        "VALUES ('d1', 'p1', 'lab_report', 'printed', 'd1', 1, 'hash', 'done', '2026-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO observation (id, document_id, bbox_json, page, engine, status, created_at) "
+        "VALUES ('o1', 'd1', '[0.1,0.2,0.3,0.4]', 1, 'paddle', 'review', '2026-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO page_text (document_id, page, text, engine, created_at) "
+        "VALUES ('d1', 1, 'HbA1c 8.9', 'paddle', '2026-01-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    init_db(path)
+
+    conn = sqlite3.connect(path)
+    try:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert conn.execute("SELECT doc_type FROM document").fetchone()[0] == "lab_report"
+        assert conn.execute("SELECT COUNT(*) FROM observation").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM page_text").fetchone()[0] == 1
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+        observation_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(observation)")
+        }
+        page_columns = {row[1] for row in conn.execute("PRAGMA table_info(page_text)")}
+        assert {"source", "model_version"} <= observation_columns
+        assert {"source", "model_version"} <= page_columns
+
+        conn.execute(
+            "INSERT INTO document (id, patient_id, doc_type, capture_type, image_path, "
+            "page_count, content_hash, status, created_at) "
+            "VALUES ('d2', 'p1', 'ct', 'printed', 'd2', 1, 'hash-2', 'queued', '2026-01-01')"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO document (id, patient_id, doc_type, capture_type, image_path, "
+                "page_count, content_hash, status, created_at) "
+                "VALUES ('d3', 'p1', 'bogus', 'printed', 'd3', 1, 'hash-3', 'queued', '2026-01-01')"
+            )
+        conn.rollback()
+    finally:
+        conn.close()

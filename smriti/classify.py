@@ -67,17 +67,81 @@ PHARMACY_KEYWORDS = (
     "gst",
     "amount",
 )
-OTHER_KEYWORDS = (
+DISCHARGE_KEYWORDS = (
     "discharge summary",
     "discharge",
-    "admission",
-    "history",
-    "examination",
-    "diagnosis",
-    "procedure",
-    "follow up",
-    "follow-up",
+    "date of admission",
+    "date of discharge",
+    "admission date",
+    "course in hospital",
+    "hospital course",
+    "discharge advice",
+    "discharge medication",
+    "discharge instructions",
+    "final diagnosis",
+    "provisional diagnosis",
+    "doa",
+    "dod",
 )
+CT_KEYWORDS = (
+    "ct scan",
+    "computed tomography",
+    "ncct",
+    "cect",
+    "hrct",
+    "plain ct",
+    "contrast enhanced ct",
+    "ct head",
+    "ct chest",
+    "ct abdomen",
+    "ct k.u.b",
+)
+MRI_KEYWORDS = (
+    "mri",
+    "magnetic resonance",
+    "mr brain",
+    "mr spine",
+    "t1 weighted",
+    "t2 weighted",
+    "flair",
+    "diffusion weighted",
+)
+XRAY_KEYWORDS = (
+    "x-ray",
+    "xray",
+    "radiograph",
+    "chest pa",
+    "chest ap",
+    "pa view",
+    "lateral view",
+)
+PATHOLOGY_KEYWORDS = (
+    "histopathology",
+    "biopsy",
+    "gross examination",
+    "microscopic examination",
+    "h&e",
+    "immunohistochemistry",
+    "cytology",
+    "fnac",
+    "carcinoma",
+    "malignancy",
+)
+RADIOLOGY_KEYWORDS = (
+    "radiology",
+    "ultrasound",
+    "usg",
+    "sonography",
+    "doppler",
+    "mammography",
+    "mammogram",
+    "pet scan",
+    "dexa",
+    "imaging",
+)
+
+# Distinctive vocabulary: one hit is enough to accept these types.
+STRONG_TYPES = {"discharge_summary", "ct", "mri", "xray", "pathology", "radiology"}
 
 _NUMBER_UNIT = re.compile(
     r"\b\d+(?:\.\d+)?\s*(?:%|mg/dl|g/dl|mmol/l|meq/l|u/l|iu/l|"
@@ -113,7 +177,12 @@ def classify_text(text: str) -> Classification:
         "lab_report": _score(lowered, LAB_KEYWORDS),
         "prescription": _score(lowered, PRESCRIPTION_KEYWORDS),
         "pharmacy": _score(lowered, PHARMACY_KEYWORDS),
-        "other": _score(lowered, OTHER_KEYWORDS),
+        "discharge_summary": _score(lowered, DISCHARGE_KEYWORDS),
+        "ct": _score(lowered, CT_KEYWORDS),
+        "mri": _score(lowered, MRI_KEYWORDS),
+        "xray": _score(lowered, XRAY_KEYWORDS),
+        "pathology": _score(lowered, PATHOLOGY_KEYWORDS),
+        "radiology": _score(lowered, RADIOLOGY_KEYWORDS),
     }
 
     if _NUMBER_UNIT.search(lowered):
@@ -129,7 +198,8 @@ def classify_text(text: str) -> Classification:
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     top_type, top_score = ranked[0]
     total = sum(scores.values())
-    if top_score < 2.0 or total <= 0:
+    threshold = 1.0 if top_type in STRONG_TYPES else 2.0
+    if top_score < threshold or total <= 0:
         confidence = 0.0 if total <= 0 else round(1.0 - top_score / total, 3)
         return Classification("other", confidence, scores)
     return Classification(top_type, round(top_score / total, 3), scores)

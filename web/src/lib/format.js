@@ -33,6 +33,12 @@ export function docTypeLabel(type) {
       lab_report: "Lab report",
       prescription: "Prescription",
       pharmacy: "Pharmacy slip",
+      discharge_summary: "Discharge summary",
+      ct: "CT report",
+      mri: "MRI report",
+      xray: "X-ray report",
+      pathology: "Pathology report",
+      radiology: "Imaging report",
       other: "Document",
     }[type] ?? type
   );

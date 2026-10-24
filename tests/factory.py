@@ -152,3 +152,14 @@ def pdf_bytes(pages: int = 3) -> bytes:
     data = document.tobytes()
     document.close()
     return data
+
+
+def scanned_pdf_bytes(image: Image.Image | None = None) -> bytes:
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_image(
+        pymupdf.Rect(0, 0, 595, 842), stream=png_bytes(image or text_image())
+    )
+    data = document.tobytes()
+    document.close()
+    return data

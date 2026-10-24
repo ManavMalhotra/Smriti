@@ -8,6 +8,12 @@ const DOC_TYPES = [
   ["lab_report", "Lab report"],
   ["prescription", "Prescription"],
   ["pharmacy", "Pharmacy slip"],
+  ["discharge_summary", "Discharge summary"],
+  ["ct", "CT report"],
+  ["mri", "MRI report"],
+  ["xray", "X-ray report"],
+  ["pathology", "Pathology report"],
+  ["radiology", "Imaging report"],
   ["other", "Other document"],
 ];
 
@@ -180,8 +186,8 @@ export default function Intake({ patient, onDone, onOpenDocument, onSignOut }) {
         <header className="page-head">
           <h1 tabIndex={-1}>Add a document</h1>
           <p>
-            Upload a lab report, prescription, or pharmacy slip for {patient.alias}. Smriti
-            detects the document type and extracts fields locally on this device.
+            Upload a medical document for {patient.alias}. Smriti detects the document
+            type and extracts fields locally on this device.
           </p>
         </header>
 

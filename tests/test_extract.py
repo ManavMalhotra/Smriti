@@ -45,6 +45,72 @@ def test_classify_unknown_is_other():
     assert classify_text("A handwritten note with no medical headings").doc_type == "other"
 
 
+def test_classify_ct_report():
+    result = classify_text(
+        "CITY HOSPITAL\nCT SCAN OF CHEST\nComputed tomography of the thorax\n"
+        "Impression: No active lesion."
+    )
+    assert result.doc_type == "ct"
+
+
+def test_classify_mri_report():
+    result = classify_text(
+        "MRI BRAIN\nMagnetic resonance imaging of the brain\n"
+        "T2 weighted images show no acute infarct."
+    )
+    assert result.doc_type == "mri"
+
+
+def test_classify_xray_report():
+    result = classify_text(
+        "CHEST X-RAY\nRadiograph of the chest, PA view\nImpression: Clear lungs."
+    )
+    assert result.doc_type == "xray"
+
+
+def test_classify_pathology_report():
+    result = classify_text(
+        "HISTOPATHOLOGY REPORT\nBiopsy from left breast\n"
+        "Gross examination: grey white tissue.\n"
+        "Microscopic examination: invasive carcinoma."
+    )
+    assert result.doc_type == "pathology"
+
+
+def test_classify_discharge_summary():
+    result = classify_text(
+        "DISCHARGE SUMMARY\nDate of admission: 02/11/2025\n"
+        "Date of discharge: 06/11/2025\nCourse in hospital: stable.\n"
+        "Final diagnosis: community acquired pneumonia."
+    )
+    assert result.doc_type == "discharge_summary"
+
+
+def test_classify_ultrasound_report():
+    result = classify_text(
+        "ULTRASOUND ABDOMEN\nUSG abdomen and pelvis\nImpression: normal study."
+    )
+    assert result.doc_type == "radiology"
+
+
+def test_extract_discharge_summary_medications():
+    extraction = extract_document(
+        [[_word("Tab. Metformin 500 mg BD", 0.1, width=0.8)]],
+        "discharge_summary",
+        "printed",
+    )
+    assert len(extraction.medications) == 1
+
+
+def test_extract_imaging_report_has_no_numeric_fields():
+    extraction = extract_document(
+        [[_word("HbA1c 8.9 %", 0.1, width=0.8)]],
+        "ct",
+        "printed",
+    )
+    assert extraction.fields == []
+
+
 def test_extract_known_lab_rows():
     words = [
         _word("HbA1c", 0.10),

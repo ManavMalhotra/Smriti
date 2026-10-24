@@ -19,7 +19,11 @@ CREATE TABLE patient (
 CREATE TABLE document (
     id               TEXT PRIMARY KEY,
     patient_id       TEXT NOT NULL REFERENCES patient(id) ON DELETE CASCADE,
-    doc_type         TEXT NOT NULL CHECK (doc_type IN ('lab_report', 'prescription', 'pharmacy', 'other')),
+    doc_type         TEXT NOT NULL CHECK (doc_type IN (
+                         'lab_report', 'prescription', 'pharmacy',
+                         'discharge_summary', 'ct', 'mri', 'xray',
+                         'pathology', 'radiology', 'other'
+                     )),
     capture_type     TEXT NOT NULL CHECK (capture_type IN ('printed', 'handwritten')),
     doc_date         TEXT,
     collection_date  TEXT,
@@ -63,6 +67,8 @@ CREATE TABLE observation (
     status        TEXT NOT NULL CHECK (status IN ('auto', 'review', 'rejected')),
     reason        TEXT,
     mapping_rule  TEXT CHECK (mapping_rule IN ('exact', 'synonym', 'unresolved')),
+    source        TEXT CHECK (source IN ('text_layer', 'ocr')),
+    model_version TEXT,
     created_at    TEXT NOT NULL,
     CHECK (status <> 'auto' OR (analyte_id IS NOT NULL AND value_num IS NOT NULL))
 );
@@ -172,6 +178,8 @@ CREATE TABLE page_text (
     page        INTEGER NOT NULL CHECK (page >= 1),
     text        TEXT NOT NULL,
     engine      TEXT NOT NULL,
+    source      TEXT CHECK (source IN ('text_layer', 'ocr')),
+    model_version TEXT,
     created_at  TEXT NOT NULL,
     PRIMARY KEY (document_id, page)
 );
@@ -236,6 +244,6 @@ BEGIN
     SELECT RAISE(ABORT, 'SI-02: no numeric laboratory value from a handwritten document');
 END;
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 COMMIT;

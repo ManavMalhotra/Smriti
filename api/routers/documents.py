@@ -172,7 +172,7 @@ def get_document(
         page_rows = conn.execute(
             text(
                 """
-                SELECT page, text, engine FROM page_text
+                SELECT page, text, engine, source, model_version FROM page_text
                 WHERE document_id = :id ORDER BY page
                 """
             ),
@@ -183,7 +183,8 @@ def get_document(
                 """
                 SELECT id, analyte_id, label_raw, value_num, value_text, unit_raw,
                        unit_norm, ref_low, ref_high, flag_printed, bbox_json, page,
-                       engine, confidence, status, reason, mapping_rule, created_at
+                       engine, confidence, status, reason, mapping_rule, source,
+                       model_version, created_at
                 FROM observation
                 WHERE document_id = :id
                 ORDER BY page, created_at
@@ -241,6 +242,8 @@ def get_document(
                 "status": mapping["status"],
                 "reason": mapping["reason"],
                 "mapping_rule": mapping["mapping_rule"],
+                "source": mapping["source"],
+                "model_version": mapping["model_version"],
                 "created_at": mapping["created_at"],
             }
         )
@@ -282,7 +285,14 @@ def get_document(
             for row in egress_rows
         ],
         "page_text": [
-            {"page": row[0], "text": row[1], "engine": row[2]} for row in page_rows
+            {
+                "page": row[0],
+                "text": row[1],
+                "engine": row[2],
+                "source": row[3],
+                "model_version": row[4],
+            }
+            for row in page_rows
         ],
         "observations": observations,
         "medications": [

@@ -20,7 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
-from smriti import handwriting, quality
+from smriti import handwriting, quality, text_layer
 from smriti.config import Settings
 from smriti.preprocess import normalise_page, to_bgr
 
@@ -70,7 +70,9 @@ def _flatten_rgb(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
-def _image_pages(data: bytes, settings: Settings) -> list[Image.Image]:
+def _image_pages(
+    data: bytes, settings: Settings
+) -> tuple[list[Image.Image], list[None]]:
     try:
         opened = Image.open(io.BytesIO(data))
         if opened.width * opened.height > settings.max_pixels:
@@ -85,10 +87,12 @@ def _image_pages(data: bytes, settings: Settings) -> list[Image.Image]:
         raise
     except Exception as exc:
         raise IngestError("invalid_file", "The image could not be decoded.") from exc
-    return [_flatten_rgb(image)]
+    return [_flatten_rgb(image)], [None]
 
 
-def _pdf_pages(data: bytes, settings: Settings) -> list[Image.Image]:
+def _pdf_pages(
+    data: bytes, settings: Settings
+) -> tuple[list[Image.Image], list[text_layer.TextLayerInspection | None]]:
     try:
         document = pymupdf.open(stream=data, filetype="pdf")
     except Exception as exc:
@@ -106,6 +110,7 @@ def _pdf_pages(data: bytes, settings: Settings) -> list[Image.Image]:
             )
 
         pages: list[Image.Image] = []
+        layers: list[text_layer.TextLayerInspection | None] = []
         scale = PDF_DPI / 72
         for page in document:
             estimated_pixels = page.rect.width * scale * page.rect.height * scale
@@ -121,7 +126,8 @@ def _pdf_pages(data: bytes, settings: Settings) -> list[Image.Image]:
                     "RGB", (pixmap.width, pixmap.height), pixmap.samples
                 )
             )
-        return pages
+            layers.append(text_layer.inspect_page(page))
+        return pages, layers
     finally:
         document.close()
 
@@ -243,7 +249,7 @@ def ingest_upload(
         )
 
     kind = _kind(data)
-    images = (
+    images, layers = (
         _pdf_pages(data, settings) if kind == "pdf" else _image_pages(data, settings)
     )
 
@@ -329,7 +335,7 @@ def ingest_upload(
         raise
 
     entries: list[dict] = []
-    prepared: list[tuple[int, np.ndarray, list[str], int]] = []
+    prepared: list[tuple[int, np.ndarray, list[str], int, tuple | None]] = []
     previous_hashes: list[int] = []
     capture_types: list[str] = []
     failure: IngestError | None = None
@@ -347,6 +353,7 @@ def ingest_upload(
                 max_aspect=settings.quality_max_aspect,
                 min_ink_ratio=settings.quality_min_ink_ratio,
             )
+            layer = layers[page_number - 1]
             entry = {
                 "source_page": page_number,
                 "page": None,
@@ -354,6 +361,7 @@ def ingest_upload(
                 "steps": [],
                 "duplicate": False,
                 "failure": reason,
+                "text_layer": layer.metrics if layer is not None else None,
             }
             entries.append(entry)
             if reason is not None:
@@ -363,7 +371,9 @@ def ingest_upload(
                 break
 
             page_bgr, steps = normalise_page(
-                image, upscale_long_edge=settings.upscale_long_edge
+                image,
+                upscale_long_edge=settings.upscale_long_edge,
+                geometry=layer is None or not layer.usable,
             )
             page_hash = quality.dhash(page_bgr)
             # shortcut: PDF pages are not deduped; a template page can differ only
@@ -376,7 +386,8 @@ def ingest_upload(
                 entry["duplicate"] = True
                 continue
             previous_hashes.append(page_hash)
-            prepared.append((page_number, page_bgr, steps, page_hash))
+            words = layer.words if layer is not None and layer.usable else None
+            prepared.append((page_number, page_bgr, steps, page_hash, words))
 
         handwritten_count = capture_types.count("handwritten")
         capture_type = (
@@ -412,17 +423,28 @@ def ingest_upload(
         if not prepared:
             raise IngestError("quality_rejected", "No usable pages found.")
 
-        for output_page, (source_page, page_bgr, steps, _page_hash) in enumerate(
-            prepared, start=1
-        ):
+        for output_page, (
+            source_page,
+            page_bgr,
+            steps,
+            _page_hash,
+            _words,
+        ) in enumerate(prepared, start=1):
             entries[source_page - 1]["page"] = output_page
             entries[source_page - 1]["steps"] = steps
 
         quality_score = min(
             entries[source_page - 1]["metrics"]["score"]
-            for source_page, _bgr, _steps, _hash in prepared
+            for source_page, _bgr, _steps, _hash, _words in prepared
         )
         quality_json = _build_quality_payload(settings, entries)
+        text_pages = sum(1 for item in prepared if item[4] is not None)
+        logger.info(
+            "Ingest document %s: %d of %d page(s) use the PDF text layer; the rest go to OCR",
+            document_id,
+            text_pages,
+            len(prepared),
+        )
 
         upload_root = settings.upload_dir
         upload_root.mkdir(parents=True, exist_ok=True)
@@ -430,10 +452,13 @@ def ingest_upload(
         target_dir = upload_root / content_hash
         temp_dir.mkdir(parents=True, exist_ok=False)
         try:
-            for output_page, (_source, page_bgr, _steps, _hash) in enumerate(
+            for output_page, (_source, page_bgr, _steps, _hash, words) in enumerate(
                 prepared, start=1
             ):
-                _save_page(page_bgr, temp_dir / f"page_{output_page}.webp")
+                page_path = temp_dir / f"page_{output_page}.webp"
+                _save_page(page_bgr, page_path)
+                if words is not None:
+                    text_layer.save_words(text_layer.words_path(page_path), words)
             if target_dir.exists():
                 shutil.rmtree(target_dir)
             temp_dir.replace(target_dir)

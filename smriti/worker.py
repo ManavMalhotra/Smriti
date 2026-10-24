@@ -13,7 +13,7 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from smriti import engines
+from smriti import engines, text_layer
 from smriti.classify import classify_text
 from smriti.config import Settings
 from smriti.directives import extract_directives
@@ -102,7 +102,13 @@ def _page_path(settings: Settings, image_path: str, page: int) -> Path:
 
 
 def _insert_extraction(
-    conn, document_id: str, patient_id: str, extraction, directives, now: str
+    conn,
+    document_id: str,
+    patient_id: str,
+    extraction,
+    directives,
+    now: str,
+    provenance: dict[int, tuple[str, str | None]],
 ) -> None:
     conn.execute(
         text("DELETE FROM observation WHERE document_id = :id"),
@@ -117,17 +123,20 @@ def _insert_extraction(
         {"id": document_id},
     )
     for field in extraction.fields:
+        source, model_version = provenance.get(field.page, (None, None))
         conn.execute(
             text(
                 """
                 INSERT INTO observation
                     (id, document_id, analyte_id, label_raw, value_num, value_text,
                      unit_raw, unit_norm, ref_low, ref_high, flag_printed, bbox_json,
-                     page, engine, confidence, status, reason, mapping_rule, created_at)
+                     page, engine, confidence, status, reason, mapping_rule, source,
+                     model_version, created_at)
                 VALUES
                     (:id, :document_id, :analyte_id, :label_raw, :value_num, :value_text,
                      :unit_raw, NULL, :ref_low, :ref_high, :flag_printed, :bbox_json,
-                     :page, :engine, :confidence, 'review', :reason, :mapping_rule, :created_at)
+                     :page, :engine, :confidence, 'review', :reason, :mapping_rule,
+                     :source, :model_version, :created_at)
                 """
             ),
             {
@@ -147,6 +156,8 @@ def _insert_extraction(
                 "confidence": field.confidence,
                 "reason": "Extracted locally; review required.",
                 "mapping_rule": field.mapping_rule,
+                "source": source,
+                "model_version": model_version,
                 "created_at": now,
             },
         )
@@ -246,37 +257,64 @@ def process_job(
 
     pages: list[list[OcrWord]] = []
     texts: list[str] = []
+    text_layer_pages = 0
+    provenance: dict[int, tuple[str, str | None]] = {}
     now = _now()
     for page in range(1, page_count + 1):
+        page_path = _page_path(settings, image_path, page)
+        cached = text_layer.words_path(page_path)
         t_page = time.time()
-        logger.info(
-            "[worker] Job %s: running OCR on page %d/%d...",
-            job["id"],
-            page,
-            page_count,
-        )
-        words = engine_ocr.read(_page_path(settings, image_path, page))
-        dt_page = time.time() - t_page
-        logger.info(
-            "[worker] Job %s: page %d/%d OCR complete in %.1fs (%d words detected)",
-            job["id"],
-            page,
-            page_count,
-            dt_page,
-            len(words),
-        )
+        if cached.is_file():
+            words = text_layer.load_words(cached)
+            page_engine = "text_layer"
+            page_source = "text_layer"
+            page_model = text_layer.MODEL_VERSION
+            text_layer_pages += 1
+            logger.info(
+                "[worker] Job %s: page %d/%d read from the PDF text layer (%d words)",
+                job["id"],
+                page,
+                page_count,
+                len(words),
+            )
+        else:
+            logger.info(
+                "[worker] Job %s: running OCR on page %d/%d...",
+                job["id"],
+                page,
+                page_count,
+            )
+            words = engine_ocr.read(page_path)
+            page_engine = engine_name
+            page_source = "ocr"
+            page_model = engine_name
+            logger.info(
+                "[worker] Job %s: page %d/%d OCR complete in %.1fs (%d words detected)",
+                job["id"],
+                page,
+                page_count,
+                time.time() - t_page,
+                len(words),
+            )
         pages.append(words)
+        provenance[page] = (page_source, page_model)
         page_text = words_to_text(words)
         texts.append(page_text)
         with engine.begin() as conn:
             conn.execute(
                 text(
                     """
-                    INSERT INTO page_text (document_id, page, text, engine, created_at)
-                    VALUES (:document_id, :page, :text, :engine, :created_at)
+                    INSERT INTO page_text
+                        (document_id, page, text, engine, source, model_version,
+                         created_at)
+                    VALUES
+                        (:document_id, :page, :text, :engine, :source,
+                         :model_version, :created_at)
                     ON CONFLICT(document_id, page) DO UPDATE SET
                         text = excluded.text,
                         engine = excluded.engine,
+                        source = excluded.source,
+                        model_version = excluded.model_version,
                         created_at = excluded.created_at
                     """
                 ),
@@ -284,7 +322,9 @@ def process_job(
                     "document_id": document_id,
                     "page": page,
                     "text": page_text,
-                    "engine": engine_name,
+                    "engine": page_engine,
+                    "source": page_source,
+                    "model_version": page_model,
                     "created_at": now,
                 },
             )
@@ -305,8 +345,10 @@ def process_job(
         classification.confidence,
     )
 
+    # `engine` is the composite pipeline identity; `source` is recorded per page.
+    field_engine = "text_layer" if text_layer_pages == page_count else engine_name
     extraction = extract_document(
-        pages, doc_type, capture_type, engine=engines.field_engine(engine_name)
+        pages, doc_type, capture_type, engine=engines.field_engine(field_engine)
     )
     dates = extract_document_dates(combined_text)
     # Handwritten content is never auto-accepted, including follow-up advice.
@@ -330,7 +372,9 @@ def process_job(
     )
 
     with engine.begin() as conn:
-        _insert_extraction(conn, document_id, patient_id, extraction, directives, now)
+        _insert_extraction(
+            conn, document_id, patient_id, extraction, directives, now, provenance
+        )
         conn.execute(
             text(
                 """

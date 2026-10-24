@@ -5,7 +5,14 @@ from fastapi.testclient import TestClient
 
 from smriti.ocr import OcrUnavailable, OcrWord
 from smriti.worker import process_next
-from tests.factory import jpeg_bytes, make_patient, text_image
+from tests.factory import (
+    jpeg_bytes,
+    make_patient,
+    pdf_bytes,
+    scanned_pdf_bytes,
+    text_image,
+    upload,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -19,6 +26,13 @@ class _FakeOcr:
             OcrWord("HbA1c 8.9 % 4.0-6.0", [0.1, 0.10, 0.8, 0.14], 0.98),
             OcrWord("Glucose 126 mg/dL 70-100", [0.1, 0.20, 0.8, 0.24], 0.97),
         ]
+
+
+class _NeverCalledOcr:
+    name = "never-called"
+
+    def read(self, _path):
+        raise AssertionError("OCR must not run for a clean digital PDF")
 
 
 class _FailingOcr:
@@ -58,6 +72,8 @@ def test_worker_extracts_lab_report_and_summary(client, app, settings):
     assert len(detail["page_text"]) == 1
     assert "HbA1c" in detail["page_text"][0]["text"]
     assert {item["status"] for item in detail["observations"]} == {"review"}
+    assert {item["source"] for item in detail["observations"]} == {"ocr"}
+    assert {item["model_version"] for item in detail["observations"]} == {"fake-ocr"}
 
     summary = client.get(f"/api/patients/{patient_id}/summary")
     assert summary.status_code == 200
@@ -127,3 +143,50 @@ def test_patients_cannot_read_each_others_records(app, settings):
         own_summary = bob.get(f"/api/patients/{bob_id}/summary")
         assert own_summary.status_code == 200
         assert own_summary.json()["documents"] == []
+
+
+def test_digital_pdf_uses_text_layer_without_ocr(client, app, settings):
+    patient_id = make_patient(client, alias="P-01")
+    response = upload(
+        client,
+        patient_id,
+        pdf_bytes(2),
+        filename="report.pdf",
+        content_type="application/pdf",
+    )
+    assert response.status_code == 202, response.text
+    body = response.json()
+
+    assert process_next(app.state.engine, settings, ocr_engine=_NeverCalledOcr()) is True
+
+    assert client.get(f"/api/jobs/{body['job_id']}").json()["state"] == "done"
+    detail = client.get(f"/api/documents/{body['document_id']}").json()
+    assert detail["status"] == "done"
+    assert {page["engine"] for page in detail["page_text"]} == {"text_layer"}
+    assert {page["source"] for page in detail["page_text"]} == {"text_layer"}
+    assert all(
+        page["model_version"].startswith("pymupdf:")
+        for page in detail["page_text"]
+    )
+    assert any("HbA1c" in page["text"] for page in detail["page_text"])
+
+
+def test_scanned_pdf_falls_back_to_ocr(client, app, settings):
+    patient_id = make_patient(client, alias="P-01")
+    response = upload(
+        client,
+        patient_id,
+        scanned_pdf_bytes(),
+        filename="scan.pdf",
+        content_type="application/pdf",
+    )
+    assert response.status_code == 202, response.text
+    body = response.json()
+
+    assert process_next(app.state.engine, settings, ocr_engine=_FakeOcr()) is True
+
+    detail = client.get(f"/api/documents/{body['document_id']}").json()
+    assert detail["status"] == "done"
+    assert {page["engine"] for page in detail["page_text"]} == {"fake-ocr"}
+    assert {page["source"] for page in detail["page_text"]} == {"ocr"}
+    assert {page["model_version"] for page in detail["page_text"]} == {"fake-ocr"}

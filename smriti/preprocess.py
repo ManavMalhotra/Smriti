@@ -162,7 +162,12 @@ def downscale(bgr: np.ndarray, max_long_edge: int = 1800) -> np.ndarray:
     )
 
 
-def normalise_page(image: Image.Image, upscale_long_edge: int = 1500, max_long_edge: int = 1800) -> tuple[np.ndarray, list[str]]:
+def normalise_page(
+    image: Image.Image,
+    upscale_long_edge: int = 1500,
+    max_long_edge: int = 1800,
+    geometry: bool = True,
+) -> tuple[np.ndarray, list[str]]:
     orientation = image.getexif().get(0x0112)
     rotated = bool(image.info.pop("smriti_exif_rotated", False))
     image = ImageOps.exif_transpose(image)
@@ -172,15 +177,17 @@ def normalise_page(image: Image.Image, upscale_long_edge: int = 1500, max_long_e
     if orientation or rotated:
         steps.append("rotate")
 
-    quad = find_page_quad(bgr)
-    if quad is not None:
-        bgr = warp_perspective(bgr, quad)
-        steps.append("perspective")
+    # Digital pages keep their own geometry so text-layer boxes stay aligned.
+    if geometry:
+        quad = find_page_quad(bgr)
+        if quad is not None:
+            bgr = warp_perspective(bgr, quad)
+            steps.append("perspective")
 
-    angle = estimate_skew(bgr)
-    if abs(angle) >= 0.2:
-        bgr = rotate(bgr, angle)
-        steps.append("deskew")
+        angle = estimate_skew(bgr)
+        if abs(angle) >= 0.2:
+            bgr = rotate(bgr, angle)
+            steps.append("deskew")
 
     bgr = apply_clahe(bgr)
     steps.append("clahe")
