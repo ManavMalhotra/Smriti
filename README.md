@@ -38,7 +38,7 @@ tasks/      implementation plan, task list, build status, PR log
 smriti/     config, schema, DB, models, auth, intake, OCR/classifier/extractor, dates, worker, summary
 api/        routers and error shape
 tests/      62 offline Python tests with temp DB and upload dir
-web/        Vite/React/Tailwind/Recharts shell, auth gate, intake, document review, 30 Vitest + axe tests
+web/        Vite/React/Tailwind/Recharts shell, auth gate, intake, document review, 34 Vitest + axe tests
 ```
 
 Start with `docs/index.md` — it lists the reading order and which document owns which decision.

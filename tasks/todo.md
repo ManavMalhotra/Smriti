@@ -4,7 +4,7 @@ Ordered by dependency. One task per line, one owner, one test. Do not start a ph
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the next phase.
 
-Current slice: PR-03a adds per-patient accounts and a partial P2 local extraction pipeline while the P1 ethics/20-document gate remains open. It does not close the gate and makes no accuracy claims.
+Current slice: PR-03c is a UI/UX pass over the review and intake screens while the P1 ethics/20-document gate remains open. It does not close the gate and makes no accuracy claims.
 
 ---
 
@@ -29,7 +29,7 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
-- [x] Vite + Tailwind + Recharts shell renders the fixture and the live summary (patient mode; Recharts lazy-loads when a result has more than one point; 30 Vitest + axe tests)
+- [x] Vite + Tailwind + Recharts shell renders the fixture and the live summary (patient mode; Recharts lazy-loads when a result has more than one point; 34 Vitest + axe tests)
 - [x] Keyboard focus management and WCAG AA contrast on summary + intake + auth (NFR-09, pulled forward from Week 13)
 - [x] Account gate: register/sign-in, signed-in patient header, sign-out
 - [x] Local intake form: authenticated upload JPEG/PNG/PDF with local-only consent, automatic type detection, 2 s polling, extracted fields and page text (pulled forward from Week 6)
@@ -79,7 +79,7 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 ## Week 6 — Review loop and first evaluation
 
 - [x] `POST /api/observations/{id}/review` + audit rows
-- [~] Review UI: field, source page, accept/correct/reject, keyboard path; printed-field review done, handwriting candidate flow open
+- [~] Review UI: field, source page, accept/correct/reject, keyboard path; printed-field review, source dialog, and mobile review cards done, handwriting candidate flow open
 - [x] Upload UI + 2 s job polling (FR-JOB-04); authenticated upload/consent/page preview/polling/extracted fields/review navigation done
 - [x] `tests/test_review.py`
 - [ ] **M1 evaluation** on 40 docs: field F1, end-to-end, material errors

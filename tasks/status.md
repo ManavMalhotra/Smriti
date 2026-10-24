@@ -84,8 +84,9 @@ The current extraction is line-based, not a table model. Every numeric field sta
 - [x] Local intake form: authenticated upload JPEG/PNG/PDF with local-only consent, automatic document-type detection, 2 s job polling, extracted fields and page text
 - [x] Live summary fetch for the signed-in patient; fixture remains the contract test
 - [x] NFR-09 keyboard focus on view changes, upload result, form resets, and document review; WCAG AA text and 3:1 control borders on summary, intake, review, and auth
-- [x] 30 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
+- [x] 34 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
 - [x] Review UI, live source-image links, and source-box overlay
+- [x] UI/UX pass: source page in a focus-trapped dialog, stacked mobile review cards with visible actions, review fields above the source page, no empty dashboard flash, short document references, and an explicit failed-extraction state
 - [ ] Clinician mode, sharing, and full dashboard zones (P4/P5)
 
 ## Module backlog
@@ -162,6 +163,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-02b | `feat/a11y-hardening` | NFR-09: focus handoff on navigation, result, reset, and patient change; WCAG 1.4.11 control borders | 18 frontend, 36 Python, build passed, manual Tab/focus and contrast check | merged `60c017c`, tag `a11y-ui` |
 | PR-03a | `feat/patient-auth-ai` | Per-patient accounts, session isolation, local PaddleOCR/classifier/rule extraction, worker, real summary API, authenticated intake polling and extracted fields | 52 Python, 24 frontend, build passed, real OCR smoke test | merged `75faa50`, tag `patient-auth-ai` |
 | PR-03b | `feat/document-review-mvp` | Review slice: accept/correct/reject with audit, review counts/status, labelled dates, live page image + bbox overlay, document review screen, extraction header/schedule fixes | 62 Python, 30 frontend, build passed, real OCR smoke + real end-to-end upload → review | merged `80644ce`, tag `document-review` |
+| PR-03c | `feat/ui-polish` | UI/UX pass: focus-trapped source dialog, stacked mobile review cards, review fields above the source page, no empty dashboard flash, short document references, explicit failed-extraction state | 62 Python, 34 frontend, build passed, real-OCR browser E2E, desktop/mobile CDP audit | merged `581dc34`, tag `ui-polish` |
 | PR-03 | `feat/p2-extraction` | Full OCR assembly, resolver, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -177,6 +179,8 @@ PR-02b is a pulled-forward NFR-09 slice of Week 13 for the screens that exist. T
 PR-03a is a partial P2 slice pulled forward with the account model. It does not close the P1 gate, does not implement P3/P4, and does not make accuracy claims.
 
 PR-03b is the review slice of P2. It does not implement table assembly, resolver/safety, handwriting review, or evaluation; review values remain unvalidated until the patient acts.
+
+PR-03c is a UI/UX pass over the existing review and intake screens. It adds no extraction capability, does not change the review contract, and does not close the P1 gate.
 
 ### PR-01 commits
 
