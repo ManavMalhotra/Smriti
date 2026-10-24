@@ -80,6 +80,11 @@ class DocumentOut(StrictModel):
     capture_type: CaptureType
     doc_date: date | None = None
     collection_date: date | None = None
+    registration_date: date | None = None
+    report_date: date | None = None
+    patient_uhid: str | None = None
+    doctor_reg_no: str | None = None
+    facility_name: str | None = None
     lab_name: str | None = None
     page_count: int = Field(ge=1)
     quality_score: float | None = None
@@ -267,6 +272,8 @@ class DocumentSummary(StrictModel):
     doc_type: DocType
     doc_date: date | None = None
     collection_date: date | None = None
+    registration_date: date | None = None
+    facility_name: str | None = None
     page_count: int = Field(ge=1)
     status: DocumentStatus
     review_count: int = Field(default=0, ge=0)

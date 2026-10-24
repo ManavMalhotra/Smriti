@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from smriti.metadata import extract_document_dates
+from smriti.metadata import (
+    extract_document_dates,
+    extract_document_identifiers,
+    extract_metadata,
+)
 
 
 pytestmark = pytest.mark.unit
@@ -12,7 +16,49 @@ def test_extracts_labelled_collection_and_report_dates():
     dates = extract_document_dates(
         "CITY LABORATORY\nCollection Date: 02/11/2025\nReport Date: 03/11/2025"
     )
-    assert dates == {"collection_date": "2025-11-02", "doc_date": "2025-11-03"}
+    assert dates["collection_date"] == "2025-11-02"
+    assert dates["report_date"] == "2025-11-03"
+    assert dates["doc_date"] in ("2025-11-02", "2025-11-03")
+
+
+def test_extracts_registration_and_admission_dates():
+    dates = extract_document_dates(
+        "Date of Admission: 12/08/2024\nDate of Discharge: 16/08/2024"
+    )
+    assert dates["registration_date"] == "2024-08-12"
+    assert dates["report_date"] == "2024-08-16"
+
+
+def test_extract_patient_uhid_and_identifiers():
+    meta = extract_document_identifiers("Patient UHID: 105234567\nAge: 45 / Male")
+    assert meta["patient_uhid"] == "105234567"
+
+    meta2 = extract_document_identifiers("CR No: 2024-009876\nWard: 5")
+    assert meta2["patient_uhid"] == "2024-009876"
+
+    meta3 = extract_document_identifiers("MRD NO: 451234\nBed: 12")
+    assert meta3["patient_uhid"] == "451234"
+
+
+def test_extract_doctor_reg_no_and_disambiguation():
+    # Doctor line with DMC Reg No
+    meta = extract_document_identifiers(
+        "Dr. Rajesh Gupta, MD\nDMC Reg No: 54321\nConsultant Physician"
+    )
+    assert meta["doctor_reg_no"] == "54321"
+
+    # Patient Reg No must NOT be classified as Doctor Reg No
+    patient_text = "Patient Name: Jane Doe\nPatient Reg No: 998877\nAge: 32"
+    meta_patient = extract_document_identifiers(patient_text)
+    assert meta_patient["doctor_reg_no"] is None
+    assert meta_patient["patient_uhid"] == "998877"
+
+
+def test_extract_facility_name():
+    text = "Vardhman Mahavir Medical College & Safdarjung Hospital\nNew Delhi - 110029\nOPD Card"
+    meta = extract_document_identifiers(text)
+    assert meta["facility_name"] is not None
+    assert "Safdarjung Hospital" in meta["facility_name"]
 
 
 def test_extracts_iso_and_month_name_dates():

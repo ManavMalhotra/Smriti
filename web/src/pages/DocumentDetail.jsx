@@ -153,8 +153,45 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
                 </div>
                 <div>
                   <dt>Date</dt>
-                  <dd>{formatDate(detail.collection_date ?? detail.doc_date)}</dd>
+                  <dd>
+                    {formatDate(
+                      detail.collection_date ??
+                        detail.registration_date ??
+                        detail.doc_date ??
+                        detail.report_date
+                    )}
+                  </dd>
                 </div>
+                {detail.facility_name || detail.lab_name ? (
+                  <div>
+                    <dt>Facility</dt>
+                    <dd>{detail.facility_name ?? detail.lab_name}</dd>
+                  </div>
+                ) : null}
+                {detail.patient_uhid ? (
+                  <div>
+                    <dt>UHID / MRD</dt>
+                    <dd>{detail.patient_uhid}</dd>
+                  </div>
+                ) : null}
+                {detail.doctor_reg_no ? (
+                  <div>
+                    <dt>Doctor Reg</dt>
+                    <dd>{detail.doctor_reg_no}</dd>
+                  </div>
+                ) : null}
+                {detail.registration_date ? (
+                  <div>
+                    <dt>Registered</dt>
+                    <dd>{formatDate(detail.registration_date)}</dd>
+                  </div>
+                ) : null}
+                {detail.report_date ? (
+                  <div>
+                    <dt>Reported</dt>
+                    <dd>{formatDate(detail.report_date)}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Pages</dt>
                   <dd>{detail.page_count}</dd>

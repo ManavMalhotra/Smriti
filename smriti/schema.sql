@@ -27,6 +27,11 @@ CREATE TABLE document (
     capture_type     TEXT NOT NULL CHECK (capture_type IN ('printed', 'handwritten')),
     doc_date         TEXT,
     collection_date  TEXT,
+    registration_date TEXT,
+    report_date      TEXT,
+    patient_uhid     TEXT,
+    doctor_reg_no    TEXT,
+    facility_name    TEXT,
     lab_name         TEXT,
     image_path       TEXT NOT NULL,             -- relative to upload_dir, never a user filename
     page_count       INTEGER NOT NULL DEFAULT 1 CHECK (page_count >= 1),
@@ -244,6 +249,6 @@ BEGIN
     SELECT RAISE(ABORT, 'SI-02: no numeric laboratory value from a handwritten document');
 END;
 
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 
 COMMIT;

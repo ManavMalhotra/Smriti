@@ -12,7 +12,7 @@ from sqlalchemy.engine import Connection, Engine
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 MIGRATIONS_PATH = Path(__file__).with_name("migrations")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _migration_path(version: int) -> Path:

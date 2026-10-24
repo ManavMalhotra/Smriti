@@ -46,8 +46,11 @@ def _parse_float(value: Any) -> float | None:
 
 
 def _doc_date(row: Any) -> date | None:
-    return _parse_date(row["collection_date"]) or _parse_date(row["doc_date"]) or _parse_date(
-        row["created_at"]
+    return (
+        _parse_date(row["collection_date"])
+        or _parse_date(row.get("registration_date"))
+        or _parse_date(row["doc_date"])
+        or _parse_date(row["created_at"])
     )
 
 
@@ -225,13 +228,13 @@ def build_summary(conn: Connection, patient_id: str) -> Summary:
     document_rows = conn.execute(
         text(
             """
-            SELECT d.id, d.doc_type, d.doc_date, d.collection_date, d.page_count,
-                   d.status, d.created_at,
+            SELECT d.id, d.doc_type, d.doc_date, d.collection_date, d.registration_date,
+                   d.facility_name, d.lab_name, d.page_count, d.status, d.created_at,
                    (SELECT COUNT(*) FROM observation o
                     WHERE o.document_id = d.id AND o.status = 'review') AS review_count
             FROM document d
             WHERE d.patient_id = :patient_id
-            ORDER BY COALESCE(d.collection_date, d.doc_date, substr(d.created_at, 1, 10)) DESC,
+            ORDER BY COALESCE(d.collection_date, d.registration_date, d.doc_date, substr(d.created_at, 1, 10)) DESC,
                      d.created_at DESC
             """
         ),
@@ -243,6 +246,8 @@ def build_summary(conn: Connection, patient_id: str) -> Summary:
             "doc_type": row._mapping["doc_type"],
             "doc_date": row._mapping["doc_date"],
             "collection_date": row._mapping["collection_date"],
+            "registration_date": row._mapping.get("registration_date"),
+            "facility_name": row._mapping.get("facility_name") or row._mapping.get("lab_name"),
             "page_count": row._mapping["page_count"],
             "status": row._mapping["status"],
             "review_count": row._mapping["review_count"],

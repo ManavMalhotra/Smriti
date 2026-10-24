@@ -83,7 +83,7 @@ def test_schema_creates_all_tables(app):
             )
         }
         assert EXPECTED_TABLES <= names
-        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 3
+        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 4
         assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
 
 
@@ -227,7 +227,7 @@ PRAGMA user_version = 2;
 """
 
 
-def test_v2_database_migrates_to_v3(tmp_path):
+def test_v2_database_migrates_to_latest(tmp_path):
     path = tmp_path / "v2.db"
     conn = sqlite3.connect(path)
     conn.executescript(_V2_SCHEMA)
@@ -254,11 +254,20 @@ def test_v2_database_migrates_to_v3(tmp_path):
 
     conn = sqlite3.connect(path)
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
         assert conn.execute("SELECT doc_type FROM document").fetchone()[0] == "lab_report"
         assert conn.execute("SELECT COUNT(*) FROM observation").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM page_text").fetchone()[0] == 1
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+        doc_columns = {row[1] for row in conn.execute("PRAGMA table_info(document)")}
+        assert {
+            "registration_date",
+            "report_date",
+            "patient_uhid",
+            "doctor_reg_no",
+            "facility_name",
+        } <= doc_columns
 
         observation_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(observation)")

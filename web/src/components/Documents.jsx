@@ -26,9 +26,19 @@ export default function Documents({ documents = [], onOpen }) {
                   <tr key={document.id}>
                     <td>
                       <span className="doc-type">{docTypeLabel(document.doc_type)}</span>
+                      {document.facility_name ? (
+                        <span className="doc-facility">{document.facility_name}</span>
+                      ) : null}
                       <span className="doc-id">#{shortId(document.id)}</span>
                     </td>
-                    <td>{formatDate(document.doc_date ?? document.collection_date)}</td>
+                    <td>
+                      {formatDate(
+                        document.date ??
+                          document.collection_date ??
+                          document.registration_date ??
+                          document.doc_date
+                      )}
+                    </td>
                     <td>{document.page_count}</td>
                     <td>
                       <span>{statusLabel(document.status)}</span>

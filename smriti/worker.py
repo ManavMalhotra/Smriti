@@ -18,7 +18,7 @@ from smriti.classify import classify_text
 from smriti.config import Settings
 from smriti.directives import extract_directives
 from smriti.extract import extract_document, words_to_text
-from smriti.metadata import extract_document_dates
+from smriti.metadata import extract_document_dates, extract_metadata
 from smriti.ocr import OcrWord, get_ocr_engine
 
 logger = logging.getLogger(__name__)
@@ -350,25 +350,25 @@ def process_job(
     extraction = extract_document(
         pages, doc_type, capture_type, engine=engines.field_engine(field_engine)
     )
-    dates = extract_document_dates(combined_text)
+    metadata = extract_metadata(combined_text)
     # Handwritten content is never auto-accepted, including follow-up advice.
     directives = (
         extract_directives(
             combined_text,
-            collection_date=dates.get("collection_date"),
-            doc_date=dates.get("doc_date"),
+            collection_date=metadata.get("collection_date"),
+            doc_date=metadata.get("doc_date"),
             as_of=date.fromisoformat(now[:10]),
         )
         if capture_type == "printed"
         else []
     )
     logger.info(
-        "[worker] Job %s: extracted %d observation(s), %d medication(s), %d directive(s) (dates=%s)",
+        "[worker] Job %s: extracted %d observation(s), %d medication(s), %d directive(s) (metadata=%s)",
         job["id"],
         len(extraction.fields),
         len(extraction.medications),
         len(directives),
-        dates,
+        metadata,
     )
 
     with engine.begin() as conn:
@@ -382,15 +382,26 @@ def process_job(
                 SET doc_type = :doc_type, doc_type_confidence = :confidence,
                     status = 'done', processed_at = :now,
                     collection_date = COALESCE(collection_date, :collection_date),
-                    doc_date = COALESCE(doc_date, :doc_date)
+                    registration_date = COALESCE(registration_date, :registration_date),
+                    report_date = COALESCE(report_date, :report_date),
+                    doc_date = COALESCE(doc_date, :doc_date),
+                    patient_uhid = COALESCE(patient_uhid, :patient_uhid),
+                    doctor_reg_no = COALESCE(doctor_reg_no, :doctor_reg_no),
+                    facility_name = COALESCE(facility_name, :facility_name),
+                    lab_name = COALESCE(lab_name, :facility_name)
                 WHERE id = :id
                 """
             ),
             {
                 "doc_type": doc_type,
                 "confidence": classification.confidence,
-                "collection_date": dates.get("collection_date"),
-                "doc_date": dates.get("doc_date"),
+                "collection_date": metadata.get("collection_date"),
+                "registration_date": metadata.get("registration_date"),
+                "report_date": metadata.get("report_date"),
+                "doc_date": metadata.get("doc_date"),
+                "patient_uhid": metadata.get("patient_uhid"),
+                "doctor_reg_no": metadata.get("doctor_reg_no"),
+                "facility_name": metadata.get("facility_name"),
                 "now": now,
                 "id": document_id,
             },
