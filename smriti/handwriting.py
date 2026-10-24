@@ -87,10 +87,17 @@ def detect_capture_type(bgr: np.ndarray) -> str:
         axis_ratio,
     ) = _component_features(bgr)
 
+    # Machine-printed text features:
+    # - Discrete glyphs: count >= 150
+    # - Real documents have mixed font sizes (headings, tables, footnotes),
+    #   so height_cv can range up to 2.2 across titles and small table text.
+    # - Bounding box aspect ratios for standard letter glyphs: 0.15 to 2.2
+    # - Solid letter strokes: fill >= 0.25 and solidity >= 0.45
+    # - Orthogonal horizontal/vertical stems: axis_ratio >= 0.60
     looks_printed = (
-        count >= 200
-        and height_cv <= 0.40
-        and 0.15 <= width_height <= 1.5
+        count >= 150
+        and height_cv <= 2.2
+        and 0.15 <= width_height <= 2.2
         and fill >= 0.25
         and solidity >= 0.45
         and axis_ratio >= 0.60

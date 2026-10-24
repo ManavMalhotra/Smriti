@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -25,6 +26,33 @@ logger = logging.getLogger(__name__)
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def recover_orphaned_jobs(engine: Engine) -> int:
+    """Reset any jobs left in 'running' by a server restart or crash."""
+    with engine.begin() as conn:
+        res = conn.execute(
+            text(
+                """
+                UPDATE jobs
+                SET state = 'queued'
+                WHERE state = 'running'
+                """
+            )
+        )
+        count = res.rowcount
+        if count > 0:
+            conn.execute(
+                text(
+                    """
+                    UPDATE document
+                    SET status = 'queued'
+                    WHERE status = 'processing'
+                      AND id IN (SELECT document_id FROM jobs WHERE state = 'queued')
+                    """
+                )
+            )
+        return count
 
 
 def claim_job(engine: Engine) -> dict | None:
@@ -51,6 +79,12 @@ def claim_job(engine: Engine) -> dict | None:
         conn.execute(
             text("UPDATE document SET status = 'processing' WHERE id = :id"),
             {"id": row[1]},
+        )
+        logger.info(
+            "[worker] Claimed job %s for document %s (%d pages total)",
+            row[0],
+            row[1],
+            row[2],
         )
         return {"id": row[0], "document_id": row[1], "total": row[2]}
 
@@ -200,11 +234,37 @@ def process_job(
     )
     engine_name = getattr(engine_ocr, "name", "paddle")
 
+    t_start = time.time()
+    logger.info(
+        "[worker] Job %s: starting OCR extraction for document %s (%d pages, capture_type='%s', engine='%s')",
+        job["id"],
+        document_id,
+        page_count,
+        capture_type,
+        engine_name,
+    )
+
     pages: list[list[OcrWord]] = []
     texts: list[str] = []
     now = _now()
     for page in range(1, page_count + 1):
+        t_page = time.time()
+        logger.info(
+            "[worker] Job %s: running OCR on page %d/%d...",
+            job["id"],
+            page,
+            page_count,
+        )
         words = engine_ocr.read(_page_path(settings, image_path, page))
+        dt_page = time.time() - t_page
+        logger.info(
+            "[worker] Job %s: page %d/%d OCR complete in %.1fs (%d words detected)",
+            job["id"],
+            page,
+            page_count,
+            dt_page,
+            len(words),
+        )
         pages.append(words)
         page_text = words_to_text(words)
         texts.append(page_text)
@@ -238,6 +298,13 @@ def process_job(
     doc_type = classification.doc_type
     if classification.confidence < 0.5 and doc_type != "other":
         doc_type = "other"
+    logger.info(
+        "[worker] Job %s: classified text as doc_type='%s' (confidence: %.2f)",
+        job["id"],
+        doc_type,
+        classification.confidence,
+    )
+
     extraction = extract_document(
         pages, doc_type, capture_type, engine=engines.field_engine(engine_name)
     )
@@ -252,6 +319,14 @@ def process_job(
         )
         if capture_type == "printed"
         else []
+    )
+    logger.info(
+        "[worker] Job %s: extracted %d observation(s), %d medication(s), %d directive(s) (dates=%s)",
+        job["id"],
+        len(extraction.fields),
+        len(extraction.medications),
+        len(directives),
+        dates,
     )
 
     with engine.begin() as conn:
@@ -282,6 +357,12 @@ def process_job(
             ),
             {"id": job["id"]},
         )
+    logger.info(
+        "[worker] Job %s: document %s completed in %.1fs total",
+        job["id"],
+        document_id,
+        time.time() - t_start,
+    )
 
 
 def process_next(engine: Engine, settings: Settings, *, ocr_engine=None) -> bool:
@@ -324,6 +405,16 @@ def start_worker(
 ) -> tuple[threading.Event, threading.Thread] | None:
     if not settings.worker_enabled:
         return None
+    recovered = recover_orphaned_jobs(engine)
+    if recovered > 0:
+        logger.warning(
+            "[worker] Recovered %d interrupted job(s) from previous run; re-queued for processing.",
+            recovered,
+        )
+    logger.info(
+        "[worker] Background OCR worker started (polling every %ss)",
+        settings.worker_poll_seconds,
+    )
     stop = threading.Event()
     thread = threading.Thread(
         target=_loop,
