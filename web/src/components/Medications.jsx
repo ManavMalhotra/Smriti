@@ -1,4 +1,5 @@
 import Panel from "./Panel";
+import { shortId } from "../lib/format";
 
 const STATES = [
   ["prescribed", "Prescribed"],
@@ -41,7 +42,7 @@ export default function Medications({ medications = [] }) {
                       "Dose not recorded"}
                   </p>
                   {medication.source_doc_id ? (
-                    <p className="item-source">Source {medication.source_doc_id}</p>
+                    <p className="item-source">Source #{shortId(medication.source_doc_id)}</p>
                   ) : null}
                 </li>
               ))}

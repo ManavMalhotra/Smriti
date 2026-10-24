@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Footer from "../components/Footer";
 import { requestJson } from "../lib/api";
-import { docTypeLabel, formatRange, statusLabel } from "../lib/format";
+import { docTypeLabel, formatRange, shortId, statusLabel } from "../lib/format";
 
 const DOC_TYPES = [
   ["auto", "Detect automatically"],
@@ -153,6 +153,7 @@ export default function Intake({ patient, onDone, onOpenDocument, onSignOut }) {
   }
 
   const status = _jobStatus(job, result?.status);
+  const failed = job?.state === "failed";
   const detectedType = detail?.doc_type ?? result?.docType;
   const pageCount = detail?.page_count ?? result?.pages;
   const observations = detail?.observations ?? [];
@@ -191,20 +192,30 @@ export default function Intake({ patient, onDone, onOpenDocument, onSignOut }) {
                 <h2 id="intake-result-heading" ref={resultHeadingRef} tabIndex={-1}>
                   {result.duplicate
                     ? "Already stored"
-                    : detail
-                      ? "Document processed"
-                      : "Document queued"}
+                    : failed
+                      ? "Extraction failed"
+                      : detail
+                        ? "Document processed"
+                        : "Document queued"}
                 </h2>
                 <p className="result-ref">
                   {result.duplicate
                     ? "This file matches a document already in your records. No new document was added."
-                    : detail
-                      ? "Local OCR and rule extraction finished. Review the fields below."
-                      : `The file is stored locally and queued for ${patient.alias}.`}
+                    : failed
+                      ? "The document is stored, but local extraction failed."
+                      : detail
+                        ? "Local OCR and rule extraction finished. Review the fields below."
+                        : `The file is stored locally and queued for ${patient.alias}.`}
                 </p>
               </div>
               <span className="pill">{statusLabel(status)}</span>
             </div>
+
+            {error ? (
+              <div className="alert" role="alert">
+                {error}
+              </div>
+            ) : null}
 
             <dl className="result-meta">
               <div>
@@ -213,7 +224,7 @@ export default function Intake({ patient, onDone, onOpenDocument, onSignOut }) {
               </div>
               <div>
                 <dt>Document</dt>
-                <dd className="mono">{result.documentId || "—"}</dd>
+                <dd className="mono">{result.documentId ? shortId(result.documentId) : "—"}</dd>
               </div>
               <div>
                 <dt>Type</dt>

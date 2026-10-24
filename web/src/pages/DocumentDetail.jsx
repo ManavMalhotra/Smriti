@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Footer from "../components/Footer";
 import PageOverlay from "../components/PageOverlay";
 import { requestJson } from "../lib/api";
-import { docTypeLabel, formatDate, formatRange, statusLabel } from "../lib/format";
+import { docTypeLabel, formatDate, formatRange, shortId, statusLabel } from "../lib/format";
 
 function fieldLabel(field) {
   return field.label_raw || field.analyte_id || "Unmapped field";
@@ -122,7 +122,7 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
           <p>
             {detail
               ? `${docTypeLabel(detail.doc_type)} for ${patient.alias}. Check each extracted value against the source page.`
-              : `Document ${documentId}`}
+              : `Document #${shortId(documentId)}`}
           </p>
         </header>
 
@@ -165,39 +165,16 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
                 </div>
                 <div>
                   <dt>Review</dt>
-                  <dd>{reviewCount > 0 ? `${reviewCount} fields pending` : "Complete"}</dd>
+                  <dd>
+                    {reviewCount > 0
+                      ? `${reviewCount} ${reviewCount === 1 ? "field" : "fields"} pending`
+                      : observations.length > 0
+                        ? "Complete"
+                        : "No fields"}
+                  </dd>
                 </div>
               </dl>
             </section>
-
-            {currentPage ? (
-              <section className="panel" aria-labelledby="source-page-heading">
-                <h2 id="source-page-heading">Source page</h2>
-                {pages.length > 1 ? (
-                  <div className="page-tabs" role="group" aria-label="Document pages">
-                    {pages.map((item) => (
-                      <button
-                        key={item.page}
-                        type="button"
-                        className={item.page === page ? "page-tab page-tab-active" : "page-tab"}
-                        aria-pressed={item.page === page}
-                        onClick={() => setPage(item.page)}
-                      >
-                        Page {item.page}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                <PageOverlay
-                  src={currentPage.url}
-                  alt={`Page ${currentPage.page} of the ${docTypeLabel(detail.doc_type)}`}
-                  boxes={pageBoxes}
-                />
-                <p className="result-note">
-                  Highlighted boxes mark extracted values. Images and text stay on this device.
-                </p>
-              </section>
-            ) : null}
 
             <section className="panel" aria-labelledby="review-fields-heading">
               <div className="result-head">
@@ -216,7 +193,7 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
 
               {observations.length > 0 ? (
                 <div className="table-wrap">
-                  <table>
+                  <table className="review-table">
                     <caption className="sr-only">Extracted fields from this document</caption>
                     <thead>
                       <tr>
@@ -231,24 +208,32 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
                     <tbody>
                       {observations.map((observation) => (
                         <tr key={observation.id}>
-                          <td>
+                          <td className="field-cell" data-label="Field">
                             <span className="doc-type">{fieldLabel(observation)}</span>
-                            {observation.analyte_id ? (
-                              <span className="doc-id">{observation.analyte_id}</span>
-                            ) : (
-                              <span className="doc-id">Unmapped</span>
-                            )}
+                            {!observation.analyte_id ? (
+                              <span className="doc-id">
+                                Not linked to a standard test; reject only.
+                              </span>
+                            ) : null}
                           </td>
-                          <td className="mono">
-                            {observation.value_text ?? observation.value_num ?? "—"}
+                          <td className="value-cell" data-label="Value">
+                            <span className="mono">
+                              {observation.value_text ?? observation.value_num ?? "—"}
+                            </span>
                             {observation.flag_printed ? (
                               <span className="flag">{observation.flag_printed}</span>
                             ) : null}
                           </td>
-                          <td>{observation.unit_norm ?? observation.unit_raw ?? "—"}</td>
-                          <td>{formatRange(observation.ref_low, observation.ref_high)}</td>
-                          <td>{statusLabel(observation.status)}</td>
-                          <td>
+                          <td className="unit-cell" data-label="Unit">
+                            {observation.unit_norm ?? observation.unit_raw ?? "—"}
+                          </td>
+                          <td className="ref-cell" data-label="Reference">
+                            {formatRange(observation.ref_low, observation.ref_high)}
+                          </td>
+                          <td className="status-cell" data-label="Status">
+                            {statusLabel(observation.status)}
+                          </td>
+                          <td className="review-cell" data-label="Review">
                             {observation.status === "review" ? (
                               editingId === observation.id ? (
                                 <form
@@ -328,7 +313,9 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
                               )
                             ) : (
                               <span className="result-note">
-                                {observation.reason ?? "Reviewed."}
+                                {observation.status === "rejected"
+                                  ? observation.reason ?? "Rejected."
+                                  : "—"}
                               </span>
                             )}
                           </td>
@@ -339,6 +326,39 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
                 </div>
               ) : null}
             </section>
+
+            {currentPage ? (
+              <section className="panel" aria-labelledby="source-page-heading">
+                <h2 id="source-page-heading">Source page</h2>
+                {pages.length > 1 ? (
+                  <div className="page-tabs" role="group" aria-label="Document pages">
+                    {pages.map((item) => (
+                      <button
+                        key={item.page}
+                        type="button"
+                        className={item.page === page ? "page-tab page-tab-active" : "page-tab"}
+                        aria-pressed={item.page === page}
+                        onClick={() => setPage(item.page)}
+                      >
+                        Page {item.page}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <PageOverlay
+                  src={currentPage.url}
+                  alt={`Page ${currentPage.page} of the ${docTypeLabel(detail.doc_type)}`}
+                  boxes={pageBoxes}
+                />
+                <p className="result-note">
+                  Highlighted boxes mark extracted values. Images and text stay on this
+                  device.{" "}
+                  <a href={currentPage.url} target="_blank" rel="noreferrer">
+                    Open full page
+                  </a>
+                </p>
+              </section>
+            ) : null}
 
             {medications.length > 0 ? (
               <section className="panel" aria-labelledby="review-medications-heading">

@@ -11,6 +11,11 @@ export function formatDate(value) {
   return dateFormatter.format(new Date(date));
 }
 
+export function shortId(value) {
+  if (!value) return "—";
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
+}
+
 export function formatSex(sex) {
   return { F: "Female", M: "Male", O: "Other" }[sex] ?? "Sex not recorded";
 }

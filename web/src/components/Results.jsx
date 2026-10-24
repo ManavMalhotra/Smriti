@@ -2,7 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import Panel from "./Panel";
 import SourceOverlay from "./SourceOverlay";
 import Value from "./Value";
-import { formatDate, formatRange } from "../lib/format";
+import { formatDate, formatRange, shortId } from "../lib/format";
 
 // Recharts only loads when a result actually has a trend to draw.
 const TrendChart = lazy(() => import("./TrendChart"));
@@ -20,7 +20,7 @@ export default function Results({ results = [] }) {
       {reviewCount > 0 ? (
         <p className="result-note" role="note">
           {reviewCount} extracted {reviewCount === 1 ? "value is" : "values are"} awaiting
-          review. Open a source document to accept, correct, or reject them.
+          review. Open the document in Documents to accept, correct, or reject them.
         </p>
       ) : null}
       {results.length === 0 ? (
@@ -124,7 +124,7 @@ export default function Results({ results = [] }) {
                   {result.excluded.map((item, index) => (
                     <li key={`${item.document_id}-${index}`}>
                       {item.reason}
-                      <span className="item-source"> Source {item.document_id}</span>
+                      <span className="item-source"> Source #{shortId(item.document_id)}</span>
                     </li>
                   ))}
                 </ul>

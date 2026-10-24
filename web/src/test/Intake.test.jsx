@@ -179,6 +179,35 @@ describe("Intake", () => {
     ]);
   });
 
+  it("reports a failed extraction instead of leaving the document queued", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(uploadResponse())
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "job-1",
+          state: "failed",
+          page: 1,
+          total: 1,
+          error: "OCR could not read this page.",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<Intake patient={patient} onDone={() => {}} />);
+
+    await fillForm(user);
+    await submit(user);
+
+    expect(
+      await screen.findByRole("heading", { name: "Extraction failed" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("OCR could not read this page.");
+    expect(
+      screen.getByText("The document is stored, but local extraction failed."),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the file and allows a retry after a server rejection", async () => {
     const fetchMock = vi
       .fn()

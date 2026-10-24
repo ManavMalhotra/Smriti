@@ -31,6 +31,7 @@ export default function Dashboard({
     pending: [],
     documents: [],
   };
+  const ready = Boolean(data) || (!loading && !error);
 
   return (
     <div className="shell">
@@ -42,7 +43,7 @@ export default function Dashboard({
       />
 
       <main>
-        {loading ? (
+        {loading && !data ? (
           <p className="empty" role="status">
             Loading summary…
           </p>
@@ -53,19 +54,23 @@ export default function Dashboard({
           </div>
         ) : null}
 
-        <div className="zone-grid two">
-          <Problems problems={view.problems} />
-          <Medications medications={view.medications} />
-        </div>
+        {ready ? (
+          <>
+            <div className="zone-grid two">
+              <Problems problems={view.problems} />
+              <Medications medications={view.medications} />
+            </div>
 
-        <div className="zone-grid">
-          <Results results={view.results} />
-        </div>
+            <div className="zone-grid">
+              <Results results={view.results} />
+            </div>
 
-        <div className="zone-grid two">
-          <Pending pending={view.pending} />
-          <Documents documents={view.documents} onOpen={onOpenDocument} />
-        </div>
+            <div className="zone-grid two">
+              <Pending pending={view.pending} />
+              <Documents documents={view.documents} onOpen={onOpenDocument} />
+            </div>
+          </>
+        ) : null}
       </main>
 
       <Footer />

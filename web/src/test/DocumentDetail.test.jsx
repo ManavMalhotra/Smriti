@@ -105,7 +105,7 @@ describe("DocumentDetail", () => {
     const row = screen.getByRole("row", { name: /HbA1c/ });
     await user.click(within(row).getByRole("button", { name: "Accept" }));
 
-    expect(await within(row).findByText("Accepted during review.")).toBeInTheDocument();
+    expect(await within(row).findByText("Accepted")).toBeInTheDocument();
     expect(onSummary).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[1];
     expect(url).toBe("/api/observations/obs-1/review");
@@ -140,7 +140,7 @@ describe("DocumentDetail", () => {
     await user.type(value, "9.1");
     await user.click(within(row).getByRole("button", { name: "Save" }));
 
-    expect(await within(row).findByText("Corrected during review.")).toBeInTheDocument();
+    expect(await within(row).findByText("Accepted")).toBeInTheDocument();
     const [url, options] = fetchMock.mock.calls[1];
     expect(url).toBe("/api/observations/obs-1/review");
     expect(JSON.parse(options.body)).toEqual({
@@ -167,6 +167,9 @@ describe("DocumentDetail", () => {
     render(<DocumentDetail documentId="doc-1" patient={patient} onBack={() => {}} />);
 
     const row = await screen.findByRole("row", { name: /Some assay/ });
+    expect(
+      within(row).getByText("Not linked to a standard test; reject only."),
+    ).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Accept" })).toBeDisabled();
     expect(within(row).getByRole("button", { name: "Correct" })).toBeDisabled();
     expect(within(row).getByRole("button", { name: "Reject" })).toBeEnabled();
