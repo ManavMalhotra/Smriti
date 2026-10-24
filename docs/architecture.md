@@ -31,10 +31,10 @@ The optional resolver remains a future P6 path. It is disabled by default and no
 | Web app | React (JS), Vite, Tailwind, Recharts | Account gate, upload, progress, document review, summary, live source overlay |
 | API | FastAPI, Pydantic v2 | HTTP contract, auth, ownership checks, validation, review, orchestration |
 | Auth | `smriti/auth.py` | scrypt password hashes, hashed session tokens, cookie sessions, ownership helpers |
-| Pipeline | Python modules | Local OCR, classification, rule/date extraction, review transitions, summary assembly |
-| Worker | One background thread | Claims jobs from SQLite, runs OCR/classification/extraction |
+| Pipeline | Python modules | Local OCR, classification, whitespace assembly, resolution, rule/date/directive extraction, review transitions, summary assembly |
+| Worker | One background thread | Claims jobs from SQLite, runs OCR/classification/extraction and persists directives |
 | Store | SQLite v2 (WAL) + filesystem | Accounts, records, page text; page images under `data/uploads/<patient-scoped-hash>/` |
-| Harness | `eval/` | Offline metrics from a frozen truth set (not implemented yet) |
+| Harness | `eval/` | Offline metrics on a synthetic fixture now; real truth set is external |
 
 One process. The worker is a thread started at app startup, not a second service. Concurrency is deliberately one.
 
@@ -87,12 +87,14 @@ POST /api/documents (session cookie; patient_id must be the signed-in patient)
 
 worker claims job (BEGIN IMMEDIATE)
    ├─ per page: PaddleOCR → words + boxes → page_text
+   ├─ assemble whitespace table regions, rows, and cells
    ├─ classify document type from page text
    ├─ extract labelled collection/report dates from OCR text
-   ├─ printed lab/other: line-based analyte rules → review observations
+   ├─ printed lab/other: analyte rules + 2-of-3 resolution → review observations
    ├─ printed prescription/pharmacy: medication rules → prescribed rows
+   ├─ rules-first directive grammar → anchored directives (no today anchor)
    ├─ handwritten: no numeric extraction (SI-01/SI-02)
-   └─ commit document status=done, processed_at, dates (user values win)
+   └─ commit document status=done, processed_at, dates, directives (user values win)
 
 POST /api/observations/{id}/review
    ├─ accept/correct: mapped printed value → auto, audit
@@ -106,7 +108,7 @@ GET /api/patients/{id}/summary
 
 A failed job marks the job and document `failed`; page text already written for earlier pages remains for diagnosis, but no observation/medication rows are committed for the failed run.
 
-The summary includes `review` observations so extracted data is visible and marks them with `status="review"`; accepted values are `auto`, rejected values are omitted. They are not clinically validated results. P3 normalisation/safety gates are not implemented.
+The summary includes `review` observations so extracted data is visible and marks them with `status="review"`; accepted values are `auto`, rejected values are omitted. They are not clinically validated results. P3 normalisation/safety gates are not implemented. The default evaluation fixture is synthetic and proves the offline harness runs; real-corpus accuracy is not measured.
 
 ## 5. Runtime profiles
 

@@ -128,6 +128,48 @@ def test_handwritten_document_does_not_create_numeric_fields():
     assert extraction.fields == []
 
 
+def test_engine_is_recorded_on_every_field():
+    words = [
+        _word("HbA1c", 0.10),
+        _word("8.9", 0.10, x=0.62, width=0.06),
+        _word("%", 0.10, x=0.70, width=0.04),
+    ]
+    extraction = extract_document(
+        [words], "lab_report", "printed", engine="fake-ocr+local-rules:line-rules@1.0+cpu"
+    )
+    assert extraction.fields
+    assert all(
+        field.engine == "fake-ocr+local-rules:line-rules@1.0+cpu"
+        for field in extraction.fields
+    )
+
+
+def test_confidence_is_derived_from_signals_not_ocr_confidence():
+    words = [
+        _word("HbA1c", 0.10),
+        _word("5.0", 0.10, x=0.62, width=0.06),
+        _word("%", 0.10, x=0.70, width=0.04),
+        _word("4-6", 0.10, x=0.76, width=0.10),
+    ]
+    words = [OcrWord(word.text, word.bbox, 0.10) for word in words]
+    extraction = extract_document([words], "lab_report", "printed")
+    assert extraction.fields[0].confidence == 1.0
+    assert extraction.fields[0].mapping_rule == "exact"
+
+
+def test_missing_unit_is_not_invented_and_stays_unresolved():
+    extraction = extract_document(
+        [[_word("HbA1c", 0.10), _word("8.9", 0.10, x=0.62, width=0.06)]],
+        "lab_report",
+        "printed",
+    )
+    field = extraction.fields[0]
+    assert field.analyte_id == "hba1c"
+    assert field.unit_raw is None
+    assert field.mapping_rule == "unresolved"
+    assert field.confidence == 0.333
+
+
 def test_paddle_adapter_maps_boxes(tmp_path: Path):
     image_path = tmp_path / "page.webp"
     Image.new("RGB", (1000, 1000), "white").save(image_path)

@@ -6,14 +6,16 @@ import json
 import logging
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from smriti import engines
 from smriti.classify import classify_text
 from smriti.config import Settings
+from smriti.directives import extract_directives
 from smriti.extract import extract_document, words_to_text
 from smriti.metadata import extract_document_dates
 from smriti.ocr import OcrWord, get_ocr_engine
@@ -65,13 +67,19 @@ def _page_path(settings: Settings, image_path: str, page: int) -> Path:
     return target
 
 
-def _insert_extraction(conn, document_id: str, patient_id: str, extraction, now: str) -> None:
+def _insert_extraction(
+    conn, document_id: str, patient_id: str, extraction, directives, now: str
+) -> None:
     conn.execute(
         text("DELETE FROM observation WHERE document_id = :id"),
         {"id": document_id},
     )
     conn.execute(
         text("DELETE FROM medication WHERE source_doc_id = :id"),
+        {"id": document_id},
+    )
+    conn.execute(
+        text("DELETE FROM directive WHERE document_id = :id"),
         {"id": document_id},
     )
     for field in extraction.fields:
@@ -101,7 +109,7 @@ def _insert_extraction(conn, document_id: str, patient_id: str, extraction, now:
                 "flag_printed": field.flag_printed,
                 "bbox_json": json.dumps(field.bbox),
                 "page": field.page,
-                "engine": "paddle+local-rules-v1",
+                "engine": field.engine,
                 "confidence": field.confidence,
                 "reason": "Extracted locally; review required.",
                 "mapping_rule": field.mapping_rule,
@@ -128,6 +136,40 @@ def _insert_extraction(conn, document_id: str, patient_id: str, extraction, now:
                 "freq": medication.freq,
                 "reported_at": now,
                 "source_doc_id": document_id,
+            },
+        )
+    for directive in directives:
+        conn.execute(
+            text(
+                """
+                INSERT INTO directive
+                    (id, document_id, span_text, span_start, span_end, action_type,
+                     timing_type, time_value, time_unit, anchor_event, condition_text,
+                     target, anchor_date, due_date, state)
+                VALUES
+                    (:id, :document_id, :span_text, :span_start, :span_end, :action_type,
+                     :timing_type, :time_value, :time_unit, :anchor_event, :condition_text,
+                     :target, :anchor_date, :due_date, :state)
+                """
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "document_id": document_id,
+                "span_text": directive.span_text,
+                "span_start": directive.span_start,
+                "span_end": directive.span_end,
+                "action_type": directive.action_type,
+                "timing_type": directive.timing_type,
+                "time_value": directive.time_value,
+                "time_unit": directive.time_unit,
+                "anchor_event": directive.anchor_event,
+                "condition_text": directive.condition_text,
+                "target": directive.target,
+                "anchor_date": (
+                    directive.anchor_date.isoformat() if directive.anchor_date else None
+                ),
+                "due_date": directive.due_date.isoformat() if directive.due_date else None,
+                "state": directive.state,
             },
         )
 
@@ -196,11 +238,24 @@ def process_job(
     doc_type = classification.doc_type
     if classification.confidence < 0.5 and doc_type != "other":
         doc_type = "other"
-    extraction = extract_document(pages, doc_type, capture_type)
+    extraction = extract_document(
+        pages, doc_type, capture_type, engine=engines.field_engine(engine_name)
+    )
     dates = extract_document_dates(combined_text)
+    # Handwritten content is never auto-accepted, including follow-up advice.
+    directives = (
+        extract_directives(
+            combined_text,
+            collection_date=dates.get("collection_date"),
+            doc_date=dates.get("doc_date"),
+            as_of=date.fromisoformat(now[:10]),
+        )
+        if capture_type == "printed"
+        else []
+    )
 
     with engine.begin() as conn:
-        _insert_extraction(conn, document_id, patient_id, extraction, now)
+        _insert_extraction(conn, document_id, patient_id, extraction, directives, now)
         conn.execute(
             text(
                 """

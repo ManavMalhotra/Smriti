@@ -4,7 +4,7 @@ Ordered by dependency. One task per line, one owner, one test. Do not start a ph
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done · **GATE** blocks the next phase.
 
-Current slice: PR-03c is a UI/UX pass over the review and intake screens while the P1 ethics/20-document gate remains open. It does not close the gate and makes no accuracy claims.
+Current slice: PR-03 (Week 4–6 local code) adds the engine registry, whitespace table assembly, deterministic resolution, directive grammar, worker persistence, and an offline evaluation harness while the P1 ethics/20-document gate remains open. It does not close the gate and makes no accuracy claims.
 
 ---
 
@@ -14,6 +14,7 @@ Current slice: PR-03c is a UI/UX pass over the review and intake screens while t
 - [x] NumPy / OpenCV / PyMuPDF / Pillow added for P1 intake
 - [x] PaddleOCR / PaddlePaddle added; RapidFuzz still deferred
 - [x] `smriti/config.py`: every key from plan §4, loaded once, recorded per run; auth TTL/attempt settings added
+- [x] Windows quick start: `start.ps1` + `start.bat` reuse `.venv`, skip unchanged installs/builds, and launch Uvicorn
 - [x] `smriti/db.py`: SQLite WAL, `foreign_keys=ON`, schema v2 with 13 tables (SRS §3.4)
 - [x] `smriti/models.py`: Pydantic v2 models for patient, document, observation, directive, medication, egress, auth payloads
 - [x] `smriti/main.py`: app factory, static mount, profile switch, worker startup
@@ -47,7 +48,7 @@ Current slice: PR-03c is a UI/UX pass over the review and intake screens while t
 - [x] `smriti/ingest.py`: content hash, idempotent write, page split, job row
 - [x] `POST /api/documents`, `POST /api/documents/{id}/consent`
 - [x] `GET /api/documents/{id}/page/{n}`, `GET /api/documents/{id}`, `GET /api/jobs/{id}`
-- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`; full backend suite 62 passed
+- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`; full backend suite currently 87 passed
 - [ ] 20 real documents in hand, consent rows recorded
 - [~] **GATE** five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
 
@@ -56,25 +57,26 @@ Current slice: PR-03c is a UI/UX pass over the review and intake screens while t
 - [x] `smriti/ocr.py`: PaddleOCR wrapper, words + normalised boxes, engine string
 - [x] `smriti/classify.py`: local document-type classifier with confidence
 - [x] `smriti/metadata.py`: labelled collection/report dates; DOB skipped; user values preserved
-- [ ] `smriti/engines.py`: registry with versions
-- [ ] `eval/run_eval.py` skeleton + `eval/metrics.py` (F1, CER) on a 5-doc fixture
-- [ ] `tests/test_eval_smoke.py`: runs offline
-- [ ] CER measured on 10 documents; per-template breakdown
-- [ ] Annotation guide v1; 30-note double-annotated subset drawn **first** (FR-DIR-10)
+- [x] `smriti/engines.py`: versioned engine strings recorded on every field
+- [x] `eval/run_eval.py` + `eval/metrics.py` (F1, CER, exact match, bootstrap CI, kappa) on a 5-doc synthetic fixture
+- [x] `tests/test_eval_smoke.py`: runs offline and verifies determinism
+- [ ] CER measured on 10 documents; per-template breakdown (needs real corpus)
+- [~] Annotation guide v1 exists; 30-note double-annotated subset still to draw (FR-DIR-10)
 - [ ] 40 documents confirmed on paper (A-03)
-- [ ] **GATE** CER measured; 40 docs confirmed; kappa computation runnable
+- [~] **GATE** synthetic harness and `eval/kappa.py` are runnable; real CER and 40-doc confirmation remain open
 
 ## Week 5 — Extraction
 
-- [ ] `smriti/assembly.py`: table regions, rows, columns from OCR output
-- [~] `smriti/extract.py`: line-based printed lab/medication rules → review candidates; table assembly and directives open
-- [ ] `smriti/resolution.py`: synonym → range → unit, 2-of-3 agreement
+- [x] `smriti/assembly.py`: table regions, rows, columns, and cells from whitespace
+- [x] `smriti/extract.py`: printed lab/medication rules over assembled rows → review candidates; no invented units
+- [x] `smriti/resolution.py`: synonym → range → unit, 2-of-3 agreement and derived confidence
 - [~] `data/analyte_map.csv`: initial analyte synonyms, units, display names; LOINC/specimen/timing open
-- [ ] `data/brand_lexicon.csv`: derived from the 40 prescriptions, not invented
-- [ ] Directive grammar v1: `action_type × timing_type` patterns
-- [x] `tests/test_extract.py`: line rules, bboxes, review status
-- [ ] `tests/test_directives.py` span offsets
-- [ ] **GATE** one printed document parsed end to end
+- [ ] `data/brand_lexicon.csv`: derived from the 40 prescriptions, not invented (blocked on corpus)
+- [x] Directive grammar v1: relative, absolute, conditional, and PRN patterns; no `today` anchor
+- [x] `tests/test_extract.py`: line rules, bboxes, engine strings, derived confidence, review status
+- [x] `tests/test_assembly.py`, `tests/test_resolution.py`: rows/cells/regions and the 2-of-3 resolver
+- [x] `tests/test_directives.py`: span offsets, anchor priority, past-date handling, worker persistence
+- [~] **GATE** synthetic printed document and real PaddleOCR smoke parse end to end; real-document gate remains open
 
 ## Week 6 — Review loop and first evaluation
 

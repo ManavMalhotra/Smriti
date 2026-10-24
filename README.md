@@ -13,13 +13,13 @@ Smriti takes the printed lab reports, prescriptions, and pharmacy slips a patien
 Most tools solve capture. Smriti's contribution is **trust and measurement**:
 
 - Every charted value carries a document, page, and bounding box. Click it, see the source.
-- Values that fail a plausibility or arithmetic check are never charted, and are shown as excluded rather than hidden.
-- Handwriting is transcribed with human confirmation of every field. Nothing from a handwritten page is ever auto-accepted, and no numeric lab value is taken from handwriting at all.
-- The headline number is measured on 40 real Indian documents with a pre-registered protocol, not estimated.
+- Plausibility and arithmetic checks are planned for P3; when implemented, failing values will be excluded rather than hidden.
+- Nothing from a handwritten page is auto-accepted: handwritten documents produce no numeric fields, and transcription review is planned for P7.
+- The headline number will be measured on 40 real Indian documents with a pre-registered protocol, not estimated.
 
 ## Status
 
-Documentation and specifications are complete. P0 (foundation) and P1 (intake) are code complete; the ethics and 20-document gates are still open. P2 is partially implemented: a local PaddleOCR worker classifies uploaded documents, extracts printed lab/medication fields and labelled dates, and the review flow accepts, corrects, or rejects each numeric field. A real summary API feeds the dashboard, and every result links to its source page and box. Each patient has a local account and sees only their own records. The P1 gate remains open; no extraction accuracy is claimed.
+Documentation and specifications are complete. P0 (foundation) and P1 (intake) are code complete; the ethics and 20-document gates are still open. P2 is code-complete for the Week 4–6 local slice: a local PaddleOCR worker classifies uploaded documents, assembles printed rows and cells, resolves analyte labels with a deterministic 2-of-3 rule, extracts printed lab/medication fields and labelled dates, and turns common follow-up phrases into anchored directives. The review flow accepts, corrects, or rejects each numeric field. A real summary API feeds the dashboard, and every result links to its source page and box. Each patient has a local account and sees only their own records. The P1 gate remains open; no extraction accuracy is claimed.
 
 | Phase | State |
 |---|---|
@@ -27,7 +27,7 @@ Documentation and specifications are complete. P0 (foundation) and P1 (intake) a
 | Capability map + 10 module specs | Done |
 | Implementation plan + task list | Done |
 | Supporting docs | In progress |
-| Code | P1 intake + per-patient accounts + local P2 extraction + review flow + live summary; normalisation/safety next |
+| Code | P1 intake + per-patient accounts + Week 4–6 P2 extraction/assembly/resolution/directives + review flow + live summary; P3 normalisation/safety next |
 
 ## Repository map
 
@@ -35,9 +35,9 @@ Documentation and specifications are complete. P0 (foundation) and P1 (intake) a
 docs/       requirements, protocol, ethics, architecture
 specs/      capability map and one spec per module
 tasks/      implementation plan, task list, build status, PR log
-smriti/     config, schema, DB, models, auth, intake, OCR/classifier/extractor, dates, worker, summary
+smriti/     config, schema, DB, models, auth, intake, OCR/classifier/assembly/resolver/extractor/directives, dates, worker, summary
 api/        routers and error shape
-tests/      62 offline Python tests with temp DB and upload dir
+tests/      87 offline Python tests with temp DB and upload dir
 web/        Vite/React/Tailwind/Recharts shell, auth gate, intake, document review, 34 Vitest + axe tests
 ```
 
@@ -53,7 +53,23 @@ Start with `docs/index.md` — it lists the reading order and which document own
 
 ## Running it
 
-Python 3.11 is required.
+Python 3.11 and Node 20.19+ or 22.12+ are required.
+
+### Windows quick start
+
+Double-click `start.bat`, or run PowerShell from the repository root:
+
+```powershell
+.\start.ps1
+# use a different port if 8000 is busy
+.\start.ps1 -Port 8001
+```
+
+The script creates or reuses `.venv`, installs Python packages only when `requirements.txt` changes, installs frontend packages only when the lockfile changes, rebuilds `web/dist` only when the frontend sources are newer, and then starts Uvicorn. A second run skips the install and build steps.
+
+Open `http://127.0.0.1:8000/`, create the first patient account, and upload a JPEG, PNG, or PDF. The worker processes it locally; the intake screen polls job state and shows extracted fields. Open the document to accept, correct, or reject each value against the source page. The API is at `http://127.0.0.1:8000/api/health`; stored pages are served at `GET /api/documents/{id}/page/{n}`.
+
+### Manual setup
 
 ```bash
 uv venv .venv --python 3.11
@@ -63,8 +79,6 @@ npm --prefix web install
 npm --prefix web run build
 .venv\Scripts\python.exe -m uvicorn smriti.main:app --reload
 ```
-
-Open `http://127.0.0.1:8000/`, create the first patient account, and upload a JPEG, PNG, or PDF. The worker processes it locally; the intake screen polls job state and shows extracted fields. Open the document to accept, correct, or reject each value against the source page. The API is at `http://127.0.0.1:8000/api/health`; stored pages are served at `GET /api/documents/{id}/page/{n}`.
 
 Starting a v1 database migrates it to schema v2 and preserves existing records. Back up `data/smriti.db` first. The first registration claims the sole unowned v1 patient; if there are several, old records are not automatically exposed.
 
@@ -77,7 +91,17 @@ npm --prefix web run build
 npm --prefix web run dev
 ```
 
-The Vite dev server proxies `/api` to `http://127.0.0.1:8000`. `npm --prefix web run build` writes `web/dist`, which FastAPI mounts at `/`; open `http://127.0.0.1:8000/` after building. The summary view fetches the signed-in patient's live summary. Uploads and OCR stay on the device. Extracted numeric fields are review-only until the patient accepts or corrects them; P3 normalisation/safety gates, P4 medication states/directives, and evaluation are not implemented yet.
+The Vite dev server proxies `/api` to `http://127.0.0.1:8000`. `npm --prefix web run build` writes `web/dist`, which FastAPI mounts at `/`; open `http://127.0.0.1:8000/` after building. The summary view fetches the signed-in patient's live summary. Uploads and OCR stay on the device. Extracted numeric fields are review-only until the patient accepts or corrects them. The Week 4–6 slice adds engine version strings, whitespace table assembly, a deterministic resolver, rule-based directive dates, and an offline evaluation harness. P3 normalisation/safety gates, full P4 medication states/reminders, and real-corpus evaluation are not implemented yet.
+
+## Evaluation
+
+The default evaluation fixture is synthetic and proves the harness runs offline; it is not a clinical accuracy result.
+
+```bash
+.venv\Scripts\python.exe eval\run_eval.py --verify-determinism
+```
+
+The harness writes `eval/out/report.json` with field F1, character error rate, end-to-end exact match, sample sizes, and fixed-seed bootstrap intervals. The real 40-document truth set and the 150-note directive annotations are external inputs and are not committed.
 
 ## Licence and data
 

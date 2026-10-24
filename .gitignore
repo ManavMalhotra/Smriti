@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 data/*
 !data/analyte_map.csv
+eval/out/
 web/node_modules/
 web/dist/
 .env

@@ -11,15 +11,15 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 | foundation | P0 | code complete, ethics gate open | 8/8 code |
 | accounts | cross-cutting | code complete; no admin/roles | 4/4 |
 | intake | P1 (week 3) | code complete + authenticated local UI, 20-doc gate open | 7/9 |
-| extraction | P2 (weeks 4-6) | partial: local OCR, classifier, rule extraction, dates, worker, review | 4/7 |
+| extraction | P2 (weeks 4-6) | local code complete: OCR, classifier, assembly, resolution, engines, extraction, dates, worker, review | 8/8 code; corpus gate open |
 | normalisation | P3 (week 8) | blocked | 0/4 |
 | safety | P3 (week 7) | blocked | 0/4 |
-| medications | P4 (week 10) | partial: printed rule extraction only | 1/3 |
-| directives | P4 (week 11) | blocked | 0/4 |
+| medications | P4 (week 10) | partial: printed rule extraction only; brand lexicon external | 1/3 |
+| directives | P4 (week 11) | partial: rule grammar + worker persistence; reminders/evaluation open | 2/4 |
 | dashboard | P5 (weeks 6, 14) | live summary API + auth gate + source overlay + document review | 4/5 |
 | egress | P6 (week 8) | blocked; no egress path wired | 0/4 |
 | handwriting-assist | P7 (weeks 9–10) | gated by week-8 decision | 0/5 |
-| evaluation | P2+ (weeks 4–12) | blocked | 0/5 |
+| evaluation | P2+ (weeks 4–12) | synthetic harness + metrics; real truth set and corpus metrics open | 2/5 |
 
 The P1 ethics and 20-document gates remain open. The user explicitly asked to continue implementation while they are open; this is a recorded scope exception, not gate closure.
 
@@ -35,7 +35,7 @@ The P1 ethics and 20-document gates remain open. The user explicitly asked to co
 - [x] Per-patient accounts: scrypt hashes, hashed session tokens, HttpOnly/SameSite cookie, ownership checks
 - [x] `DELETE /api/patients/{id}` with cascade erase, file removal, audit row, demo read-only guard
 - [x] `web/src/fixtures/summary.json`: frozen contract fixture; bbox length and `from` alias tested
-- [x] `tests/`: 62 passed; non-loopback sockets blocked
+- [x] `tests/`: 87 passed; non-loopback sockets blocked
 - [x] CI workflow: Python 3.11, install, pytest
 - [ ] Ethics pack submitted (team task, OR-01) — blocks the phase gate
 - [~] Intended-use statement in the UI footer; report and demo still open (OR-05)
@@ -54,24 +54,29 @@ The P1 ethics and 20-document gates remain open. The user explicitly asked to co
 - [ ] 20 real documents in hand, consent rows recorded (team task)
 - [~] **Gate**: five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
 
-## P2 — Local extraction (partial)
+## P2 — Local extraction (Week 4–6 slice)
 
 - [x] `smriti/ocr.py`: PaddleOCR adapter, words and normalised boxes, engine string, oneDNN workaround
 - [x] `smriti/classify.py`: local document-type classifier with confidence
 - [x] `smriti/analytes.py` + `data/analyte_map.csv`: initial analyte synonyms, units, display names
-- [x] `smriti/extract.py`: line grouping, printed lab-field rules, printed medication rules, bbox and review status
-- [x] `smriti/worker.py`: one background loop, job claim, page OCR, classification, extraction, date extraction, failure state
+- [x] `smriti/engines.py`: versioned engine identity recorded on every field
+- [x] `smriti/assembly.py`: whitespace table regions, rows, columns, and cells; merged-cell layouts stay single cells
+- [x] `smriti/resolution.py`: synonym → printed-range → unit, 2-of-3 agreement and derived confidence
+- [x] `smriti/extract.py`: printed lab/medication rules over assembled rows; no invented units
+- [x] `smriti/directives.py`: relative, absolute, conditional, and PRN grammar; anchor priority; no `today`
+- [x] `smriti/worker.py`: one background loop, job claim, page OCR, classification, extraction, date/directive extraction, persistence, failure state
 - [x] `smriti/summary.py`: real seven-key summary from stored documents/observations/medications/directives, with point status and document review counts
 - [x] `smriti/metadata.py`: conservative labelled collection/report date extraction; DOB lines are skipped and user dates win
 - [x] `api/routers/review.py` + `web/src/pages/DocumentDetail.jsx`: accept/correct/reject, ownership guards, audit rows, live summary refresh
 - [x] `web/src/components/PageOverlay.jsx` + source links: real page image with extracted bounding box
-- [x] `tests/test_extract.py`, `tests/test_worker.py`, `tests/test_metadata.py`, `tests/test_review.py`: 18 extraction/review tests; real OCR smoke-tested on synthetic lab/prescription images and a real end-to-end upload → review run
-- [ ] `smriti/assembly.py`: table regions, rows, columns
-- [ ] `smriti/resolution.py`: synonym → range → unit, 2-of-3 agreement
-- [ ] `eval/run_eval.py` + metrics on a labelled corpus
-- [ ] **Gate** one printed document parsed end to end; accuracy measured, not claimed
+- [x] `tests/test_extract.py`, `tests/test_worker.py`, `tests/test_metadata.py`, `tests/test_review.py`: extraction/review tests; real OCR smoke-tested on synthetic lab/prescription images and a real end-to-end upload → review run
+- [x] `eval/metrics.py`, `eval/run_eval.py`, `eval/kappa.py`, `eval/fixtures/smoke_docs.json`: offline F1/CER/exact-match/kappa harness with fixed-seed CIs
+- [x] `tests/test_assembly.py`, `tests/test_resolution.py`, `tests/test_directives.py`, `tests/test_eval_smoke.py`: 25 new local tests
+- [ ] Real-corpus field F1/CER on 10 and 40 documents; per-template breakdown
+- [ ] 150 directive notes, 30-note double annotation, and kappa ≥ 0.70
+- [~] **Gate** one printed document parsed end to end: synthetic worker test and real PaddleOCR smoke pass; real-document accuracy gate open
 
-The current extraction is line-based, not a table model. Every numeric field starts as `review`; only explicit review sets `auto` or `rejected`. No clinical normalisation or safety gate runs. Handwritten documents produce no numeric fields. The existing real discharge summary is classified `other` with confidence `0.386` and `capture_type='handwritten'`, so it yields no numeric fields by design.
+The extraction path now uses whitespace-only table assembly. It does not infer merged cells, so a layout that whitespace cannot separate stays one cell and is left for review. Every numeric field still starts as `review`; only explicit review sets `auto` or `rejected`. The resolver can mark a known label `unresolved` when fewer than two signals agree; the analyte id is retained so the patient can still review it. Directives are rules-first and store exact spans; past relative/absolute dates become `unknown_date`, and conditional/PRN directives have no due date. No clinical normalisation or safety gate runs. Handwritten documents produce no numeric fields. The existing real discharge summary is classified `other` with confidence `0.386` and `capture_type='handwritten'`, so it yields no numeric fields by design.
 
 ## Week 2 — UI shell and local intake
 
@@ -95,14 +100,15 @@ The current extraction is line-based, not a table model. Every numeric field sta
 
 - [x] `smriti/ocr.py`: PaddleOCR wrapper, words and normalised boxes, engine string
 - [x] `smriti/classify.py`: local document-type classifier
-- [x] `smriti/extract.py`: line rules → review candidates
+- [x] `smriti/engines.py`: versioned engine registry
+- [x] `smriti/assembly.py`: whitespace table regions, rows, columns, and cells
+- [x] `smriti/resolution.py`: synonym → range → unit, 2-of-3 agreement
+- [x] `smriti/extract.py`: printed rules over assembled rows → review candidates
 - [x] `smriti/worker.py`: local pipeline and job state
 - [x] `smriti/summary.py`: real summary builder
-- [ ] `smriti/engines.py`: registry with versions
-- [ ] `smriti/assembly.py`: table regions, rows, columns
-- [ ] `smriti/resolution.py`: synonym → range → unit, 2-of-3 agreement
-- [ ] `POST /api/observations/{id}/review` and review UI
-- [ ] `eval/run_eval.py` skeleton and `eval/metrics.py` (F1, CER) on a 5-doc fixture
+- [x] `POST /api/observations/{id}/review` and review UI
+- [x] `eval/run_eval.py` + `eval/metrics.py` on the synthetic 5-doc fixture
+- [ ] Real-corpus F1/CER and per-template breakdown
 
 ### Normalisation and safety
 
@@ -114,10 +120,12 @@ The current extraction is line-based, not a table model. Every numeric field sta
 
 ### Medications and directives
 
-- [ ] `data/brand_lexicon.csv` derived from the 40 prescriptions, not invented
+- [ ] `data/brand_lexicon.csv` derived from the 40 prescriptions, not invented (blocked on corpus)
 - [~] Medication extraction: printed rule extraction writes `prescribed` rows; three never-merged states and reporting UI open
-- [ ] Directive grammar: `action_type × timing_type`; anchor `collection_date → doc_date → unknown`, never today
+- [x] Directive grammar: relative, absolute, conditional, and PRN; anchor `collection_date → doc_date → unknown`, never today
+- [x] Directive worker persistence: exact spans and state written to the `directive` table
 - [ ] Reminders: anchor shown, unknown state shown, no past notifications
+- [ ] Directive span/timing/date evaluation on 150 notes
 
 ### Dashboard and sharing
 
@@ -144,11 +152,11 @@ The current extraction is line-based, not a table model. Every numeric field sta
 
 ### Evaluation
 
-- [ ] Truth-set harness and offline reproduction
-- [ ] Field F1, CER, end-to-end, material errors
-- [ ] Bootstrap CIs, 1000 resamples, seed recorded
-- [ ] Risk–coverage curve at 100/90/80 %
-- [ ] `report.json` + figures regenerated offline
+- [~] Truth-set harness and offline reproduction: synthetic fixture works; real `truth_set.csv` external
+- [~] Field F1, CER, end-to-end: implemented and tested on synthetic data; real corpus open
+- [x] Bootstrap CIs, 1000 resamples, fixed seed recorded
+- [ ] Material-error taxonomy and risk–coverage curve at 100/90/80 %
+- [~] `report.json` regenerated offline on synthetic fixture; real report and figures open
 
 ## PR log
 
@@ -164,7 +172,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-03a | `feat/patient-auth-ai` | Per-patient accounts, session isolation, local PaddleOCR/classifier/rule extraction, worker, real summary API, authenticated intake polling and extracted fields | 52 Python, 24 frontend, build passed, real OCR smoke test | merged `75faa50`, tag `patient-auth-ai` |
 | PR-03b | `feat/document-review-mvp` | Review slice: accept/correct/reject with audit, review counts/status, labelled dates, live page image + bbox overlay, document review screen, extraction header/schedule fixes | 62 Python, 30 frontend, build passed, real OCR smoke + real end-to-end upload → review | merged `80644ce`, tag `document-review` |
 | PR-03c | `feat/ui-polish` | UI/UX pass: focus-trapped source dialog, stacked mobile review cards, review fields above the source page, no empty dashboard flash, short document references, explicit failed-extraction state | 62 Python, 34 frontend, build passed, real-OCR browser E2E, desktop/mobile CDP audit | merged `581dc34`, tag `ui-polish` |
-| PR-03 | `feat/p2-extraction` | Full OCR assembly, resolver, eval skeleton | planned | not started |
+| PR-03 | `feat/week4-6-mvp` | Week 4–6 local slice: engine registry, whitespace assembly, 2-of-3 resolver, directive grammar/persistence, offline eval harness, Windows start scripts | 87 Python, 34 frontend, build passed, real PaddleOCR smoke, startup health check | in review, feature `1bf05f7` |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
 | PR-06 | `feat/p5-dashboard` | Full summary zones, coverage, patient/clinician modes, share links | planned | not started |
@@ -181,6 +189,8 @@ PR-03a is a partial P2 slice pulled forward with the account model. It does not 
 PR-03b is the review slice of P2. It does not implement table assembly, resolver/safety, handwriting review, or evaluation; review values remain unvalidated until the patient acts.
 
 PR-03c is a UI/UX pass over the existing review and intake screens. It adds no extraction capability, does not change the review contract, and does not close the P1 gate.
+
+PR-03 is the Week 4–6 local code slice. It adds table assembly, resolution, directive extraction/persistence, and an offline evaluation harness. It does not add real-corpus accuracy, the brand lexicon, reminder UI, P3 normalisation/safety, or P4 medication states; the P1 ethics/20-document gate remains open.
 
 ### PR-01 commits
 
@@ -230,12 +240,19 @@ PR-03c is a UI/UX pass over the existing review and intake screens. It adds no e
 - `d7587dd` docs: record PR-03b feature commit
 - Merge: `80644ce` (tag `document-review`)
 
-## Known limits at P2 partial
+### PR-03 commits
+
+- `1bf05f7` feat: complete Week 4-6 local extraction slice
+
+## Known limits at P2 Week 4–6 local slice
 
 - The P1 ethics pack, 20 real consented documents, and quality-gate precision check are still open. No extraction accuracy is claimed.
-- Extraction is line-based and rule-based, not a table model. Multi-column lab tables, labels after values, and unusual layouts will be missed or misread.
+- Assembly uses whitespace only. Merged cells, labels after values, multi-column tables with narrow gutters, and unusual layouts can stay one cell or be missed; they remain review-only.
+- Resolution requires two of three signals (label/synonym, printed-range containment, unit match). A known label with only one signal is stored as `unresolved` but keeps its analyte id for review.
 - Every extracted numeric field starts as `review`; the patient can accept, correct, or reject it. The summary includes pending points marked `Review`; this is not clinical validation.
 - No P3 normalisation, unit conversion, plausibility/arithmetic gates, or reference-range safety checks. `unit_norm` is always null from the worker.
+- Directive grammar covers common printed phrasings only. Past relative/absolute dates become `unknown_date`; conditional/PRN directives have no due date. Supersession, reminders UI, and directive evaluation are open.
+- The default evaluation fixture is synthetic; its perfect scores prove harness integrity, not clinical accuracy. The real 40-document truth set and 150-note annotations are external.
 - Handwritten documents produce no numeric observations by design. Handwriting detection is a conservative heuristic, not a trained classifier; a shadowed printed page can fall back to `handwritten`.
 - The classifier is keyword-based. The existing 3-page discharge summary lands on `other` with confidence `0.386` and is treated as handwritten, so it yields no fields.
 - PDF pages are not deduplicated; a perceptual hash cannot distinguish template pages that differ by one value.
@@ -243,9 +260,10 @@ PR-03c is a UI/UX pass over the existing review and intake screens. It adds no e
 - The first registration only auto-claims a sole unowned v1 patient. Multiple legacy patients need a separate claim path that is not built.
 - Accounts are local only; the cookie is not `Secure` over HTTP, there is no CSRF token (SameSite=Strict only), no password reset, no email, no admin role, and no share link.
 - The worker is one thread and holds the engine while OCR runs. App shutdown waits at most five seconds for the worker; a long OCR job can outlive shutdown.
-- The summary has no P4 directives yet, so `pending` is empty unless directives are inserted by another path. `problems` is always `[]`.
+- `summary.pending` now reads persisted directives; there is no reminder UI, no notification, and no supersession logic yet. `problems` is always `[]`.
 - The trend chart only renders with more than one point; a single point stays a table.
-- The dashboard source panel now shows the live page image and box. Crop-level zoom, multi-box navigation, and handwriting review are still open.
+- The dashboard source panel shows the live page image and box. Crop-level zoom, multi-box navigation, and handwriting review are still open.
+- The Windows start scripts were verified on this machine: first run installs/builds, second run skips both and serves `/api/health`.
 
 ## Open contract decisions
 
