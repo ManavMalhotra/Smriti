@@ -9,9 +9,20 @@ const TrendChart = lazy(() => import("./TrendChart"));
 
 export default function Results({ results = [] }) {
   const [source, setSource] = useState(null);
+  const reviewCount = results.reduce(
+    (count, result) =>
+      count + result.points.filter((point) => point.status === "review").length,
+    0,
+  );
 
   return (
     <Panel title="Results">
+      {reviewCount > 0 ? (
+        <p className="result-note" role="note">
+          {reviewCount} extracted {reviewCount === 1 ? "value is" : "values are"} awaiting
+          review. Open a source document to accept, correct, or reject them.
+        </p>
+      ) : null}
       {results.length === 0 ? (
         <p className="empty">No results recorded.</p>
       ) : (
@@ -69,6 +80,9 @@ export default function Results({ results = [] }) {
                           unit={result.unit}
                           flag={point.flag_printed}
                         />
+                        {point.status === "review" ? (
+                          <span className="pill value-status">Review</span>
+                        ) : null}
                       </td>
                       <td>
                         <button
@@ -78,7 +92,7 @@ export default function Results({ results = [] }) {
                             setSource({
                               ...point,
                               analyte: result.display,
-                              pageUrl: null,
+                              pageUrl: `/api/documents/${point.document_id}/page/${point.page}`,
                             })
                           }
                           aria-label={`Open source for ${result.display} on ${formatDate(

@@ -17,6 +17,7 @@ export default function Dashboard({
   data,
   patient,
   onAdd,
+  onOpenDocument,
   onSignOut,
   loading = false,
   error = "",
@@ -63,7 +64,7 @@ export default function Dashboard({
 
         <div className="zone-grid two">
           <Pending pending={view.pending} />
-          <Documents documents={view.documents} />
+          <Documents documents={view.documents} onOpen={onOpenDocument} />
         </div>
       </main>
 

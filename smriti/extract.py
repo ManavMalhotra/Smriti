@@ -13,32 +13,58 @@ _UNIT = re.compile(
     r"ng/mL|pg/mL|µIU/mL|mIU/mL|mm/hr)",
     re.IGNORECASE,
 )
-_NUMBER = re.compile(r"(?<![\d.])([<>]?)\s*(-?\d+(?:\.\d+)?)")
+_NUMBER = re.compile(r"(?<![A-Za-z0-9.-])([<>]?)\s*(-?\d+(?:\.\d+)?)")
 _RANGE = re.compile(
     r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)"
 )
 _FLAG = re.compile(r"\b(high|low|h|l|abnormal)\b", re.IGNORECASE)
+_MED_FREQ = (
+    r"od|bd|tds|qid|hs|sos|prn|once\s+daily|twice\s+daily|"
+    r"thrice\s+daily|every\s+day|\d\s*-\s*\d\s*-\s*\d|\d\s*/\s*\d\s*/\s*\d"
+)
 _MED = re.compile(
-    r"\b(?P<form>tab|cap|syp|inj|tablet|capsule|syrup|injection)\.?\s+"
+    r"\b(?:(?P<form>tab|cap|syp|inj|tablet|capsule|syrup|injection)\.?\s+)?"
     r"(?P<brand>[A-Za-z][A-Za-z0-9-]{1,40})"
     r"(?:\s+(?P<dose>\d+(?:\.\d+)?\s*(?:mg|g|ml|mcg|iu)))?"
-    r"(?:\s+(?P<freq>od|bd|tds|qid|hs|sos|prn|once\s+daily|twice\s+daily|"
-    r"thrice\s+daily|every\s+day))?",
+    rf"(?:\s+(?P<freq>{_MED_FREQ}))?",
     re.IGNORECASE,
 )
-_DATE_WORDS = (
+# Headers, identifiers, and dates never become unresolved lab fields.
+_NON_RESULT_WORDS = (
     "date",
     "dob",
     "age",
+    "sex",
+    "gender",
     "phone",
     "mobile",
+    "address",
     "bill",
     "invoice",
+    "barcode",
     "report",
+    "reported",
     "page",
     "sample",
     "specimen",
+    "collection",
     "lab no",
+    "reg",
+    "registration",
+    "uhid",
+    "mrn",
+    "patient",
+    "name",
+    "id",
+    "doctor",
+    "dr",
+    "consultant",
+    "hospital",
+    "clinic",
+    "diagnosis",
+    "history",
+    "advice",
+    "note",
 )
 
 
@@ -204,7 +230,7 @@ def _extract_line(
         return fields
 
     lowered = text.lower()
-    if any(word in lowered for word in _DATE_WORDS):
+    if any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in _NON_RESULT_WORDS):
         return fields
     label = text.strip(" :-")
     if len(label) < 3:
@@ -241,13 +267,17 @@ def _extract_medications(words: list[OcrWord]) -> list[ExtractedMedication]:
     text = " ".join(word.text for word in words)
     medications: list[ExtractedMedication] = []
     for match in _MED.finditer(text):
-        brand = match.group("brand").strip()
-        form = match.group("form").strip().capitalize()
+        form = match.group("form")
         dose = match.group("dose")
         freq = match.group("freq")
+        # A bare word is not a medication; require a form, a dose, or both.
+        if not (form or dose):
+            continue
+        brand = match.group("brand").strip()
+        brand_raw = f"{form.capitalize()}. {brand}" if form else brand
         medications.append(
             ExtractedMedication(
-                brand_raw=f"{form}. {brand}",
+                brand_raw=brand_raw,
                 dose=" ".join(dose.split()) if dose else None,
                 freq=" ".join(freq.upper().split()) if freq else None,
                 confidence=_confidence(words),

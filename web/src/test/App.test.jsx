@@ -13,12 +13,37 @@ function jsonResponse(body, status = 200) {
   };
 }
 
+function documentResponse() {
+  return jsonResponse({
+    id: "d-01",
+    patient_id: summary.patient.id,
+    doc_type: "lab_report",
+    doc_type_confidence: 0.9,
+    capture_type: "printed",
+    doc_date: "2025-11-02",
+    collection_date: "2025-11-02",
+    lab_name: null,
+    page_count: 1,
+    quality_score: 0.8,
+    status: "done",
+    processed_at: "2026-10-23T00:00:00Z",
+    created_at: "2026-10-23T00:00:00Z",
+    consent: null,
+    egress: [],
+    page_text: [{ page: 1, text: "HbA1c 8.9 %", engine: "fake" }],
+    observations: [],
+    medications: [],
+    pages: [{ page: 1, url: "/api/documents/d-01/page/1" }],
+  });
+}
+
 function authenticatedFetch() {
   return vi.fn((url) => {
     if (url === "/api/auth/me") return Promise.resolve(jsonResponse(summary.patient));
     if (url === `/api/patients/${summary.patient.id}/summary`) {
       return Promise.resolve(jsonResponse(summary));
     }
+    if (url === "/api/documents/d-01") return Promise.resolve(documentResponse());
     return Promise.reject(new Error(`Unexpected request: ${url}`));
   });
 }
@@ -42,6 +67,29 @@ describe("App navigation", () => {
     ).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Back to summary" }));
     expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toHaveFocus();
+  });
+
+  it("opens a document review and returns to the summary", async () => {
+    vi.stubGlobal("fetch", authenticatedFetch());
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "P-01" }),
+    ).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("button", { name: "Review Lab report d-01" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Document review" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Page 1 of the Lab report" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back to summary" }));
+    expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toBeInTheDocument();
   });
 
   it("shows sign in when there is no session and loads the summary after login", async () => {

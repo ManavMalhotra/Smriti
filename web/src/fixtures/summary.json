@@ -50,7 +50,8 @@
           "observation_id": "o-01",
           "document_id": "d-01",
           "page": 1,
-          "bbox": [0.61, 0.42, 0.78, 0.47]
+          "bbox": [0.61, 0.42, 0.78, 0.47],
+          "status": "auto"
         }
       ],
       "excluded": []
@@ -74,7 +75,8 @@
       "doc_date": "2025-11-02",
       "collection_date": "2025-11-02",
       "page_count": 1,
-      "status": "done"
+      "status": "done",
+      "review_count": 0
     }
   ]
 }

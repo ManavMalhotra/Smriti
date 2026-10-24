@@ -15,6 +15,7 @@ from sqlalchemy.engine import Engine
 from smriti.classify import classify_text
 from smriti.config import Settings
 from smriti.extract import extract_document, words_to_text
+from smriti.metadata import extract_document_dates
 from smriti.ocr import OcrWord, get_ocr_engine
 
 logger = logging.getLogger(__name__)
@@ -190,11 +191,13 @@ def process_job(
                 {"page": page, "id": job["id"]},
             )
 
-    classification = classify_text("\n".join(texts))
+    combined_text = "\n".join(texts)
+    classification = classify_text(combined_text)
     doc_type = classification.doc_type
     if classification.confidence < 0.5 and doc_type != "other":
         doc_type = "other"
     extraction = extract_document(pages, doc_type, capture_type)
+    dates = extract_document_dates(combined_text)
 
     with engine.begin() as conn:
         _insert_extraction(conn, document_id, patient_id, extraction, now)
@@ -203,13 +206,17 @@ def process_job(
                 """
                 UPDATE document
                 SET doc_type = :doc_type, doc_type_confidence = :confidence,
-                    status = 'done', processed_at = :now
+                    status = 'done', processed_at = :now,
+                    collection_date = COALESCE(collection_date, :collection_date),
+                    doc_date = COALESCE(doc_date, :doc_date)
                 WHERE id = :id
                 """
             ),
             {
                 "doc_type": doc_type,
                 "confidence": classification.confidence,
+                "collection_date": dates.get("collection_date"),
+                "doc_date": dates.get("doc_date"),
                 "now": now,
                 "id": document_id,
             },

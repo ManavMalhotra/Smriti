@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+from sqlalchemy import text
+
+from smriti.ocr import OcrWord
+from smriti.worker import process_next
+from tests.factory import jpeg_bytes, make_patient, text_image
+
+
+class _FakeOcr:
+    name = "fake-ocr"
+
+    def read(self, _path):
+        return [
+            OcrWord("HbA1c 8.9 % 4.0-6.0", [0.1, 0.10, 0.8, 0.14], 0.98),
+            OcrWord("Glucose 126 mg/dL 70-100", [0.1, 0.20, 0.8, 0.24], 0.97),
+        ]
+
+
+def _processed_document(client, app, settings):
+    patient_id = make_patient(client, alias="P-01")
+    uploaded = client.post(
+        "/api/documents",
+        data={"patient_id": patient_id, "consent_scope": "local"},
+        files={"file": ("page.jpg", jpeg_bytes(text_image()), "image/jpeg")},
+    )
+    assert uploaded.status_code == 202, uploaded.text
+    body = uploaded.json()
+    assert process_next(app.state.engine, settings, ocr_engine=_FakeOcr()) is True
+    detail = client.get(f"/api/documents/{body['document_id']}").json()
+    return patient_id, body["document_id"], detail
+
+
+def _audit_rows(app, observation_id):
+    with app.state.engine.connect() as conn:
+        return conn.execute(
+            text("SELECT field, old, new FROM audit WHERE entity_id = :id ORDER BY ts"),
+            {"id": observation_id},
+        ).all()
+
+
+def test_accept_updates_summary_and_audit(client, app, settings):
+    patient_id, document_id, detail = _processed_document(client, app, settings)
+    observation = next(
+        item for item in detail["observations"] if item["analyte_id"] == "hba1c"
+    )
+
+    response = client.post(
+        f"/api/observations/{observation['id']}/review",
+        json={"action": "accept"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["observation"]["status"] == "auto"
+    assert body["observation"]["reason"] == "Accepted during review."
+    assert body["summary"]["documents"][0]["id"] == document_id
+    assert body["summary"]["documents"][0]["review_count"] == 1
+    by_display = {result["display"]: result for result in body["summary"]["results"]}
+    assert by_display["HbA1c"]["points"][0]["status"] == "auto"
+    assert by_display["Glucose"]["points"][0]["status"] == "review"
+
+    audit = _audit_rows(app, observation["id"])
+    assert ("status", "review", "auto") in [tuple(row) for row in audit]
+
+    again = client.post(
+        f"/api/observations/{observation['id']}/review",
+        json={"action": "accept"},
+    )
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "already_reviewed"
+
+
+def test_correct_replaces_value_and_keeps_original_in_audit(client, app, settings):
+    _patient_id, _document_id, detail = _processed_document(client, app, settings)
+    observation = next(
+        item for item in detail["observations"] if item["analyte_id"] == "hba1c"
+    )
+
+    response = client.post(
+        f"/api/observations/{observation['id']}/review",
+        json={"action": "correct", "value_num": "9.10", "unit_norm": "%"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["observation"]["value_num"] == "9.1"
+    assert body["observation"]["value_text"] == "9.1"
+    assert body["observation"]["status"] == "auto"
+    by_display = {result["display"]: result for result in body["summary"]["results"]}
+    assert by_display["HbA1c"]["points"][0]["value"] == 9.1
+
+    audit = [tuple(row) for row in _audit_rows(app, observation["id"])]
+    assert ("value_num", "8.9", "9.1") in audit
+    assert ("status", "review", "auto") in audit
+
+
+def test_reject_removes_value_from_results(client, app, settings):
+    _patient_id, _document_id, detail = _processed_document(client, app, settings)
+    observation = next(
+        item for item in detail["observations"] if item["analyte_id"] == "glucose"
+    )
+
+    response = client.post(
+        f"/api/observations/{observation['id']}/review",
+        json={"action": "reject", "reason": "Not this patient's row"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["observation"]["status"] == "rejected"
+    displays = {result["display"] for result in body["summary"]["results"]}
+    assert "Glucose" not in displays
+    assert body["summary"]["documents"][0]["review_count"] == 1
+
+
+def test_unmapped_field_cannot_be_accepted(client, app, settings):
+    patient_id = make_patient(client, alias="P-01")
+    uploaded = client.post(
+        "/api/documents",
+        data={"patient_id": patient_id, "consent_scope": "local"},
+        files={"file": ("page.jpg", jpeg_bytes(text_image()), "image/jpeg")},
+    )
+    body = uploaded.json()
+
+    class _UnknownOcr:
+        name = "fake-ocr"
+
+        def read(self, _path):
+            return [OcrWord("Some assay 42", [0.1, 0.1, 0.8, 0.14], 0.98)]
+
+    assert process_next(app.state.engine, settings, ocr_engine=_UnknownOcr()) is True
+    detail = client.get(f"/api/documents/{body['document_id']}").json()
+    observation = detail["observations"][0]
+    assert observation["analyte_id"] is None
+
+    response = client.post(
+        f"/api/observations/{observation['id']}/review",
+        json={"action": "accept"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "unmapped"
+
+
+def test_review_is_scoped_to_the_owning_patient(app, settings):
+    with TestClient(app) as alice:
+        _patient_id, _document_id, detail = _processed_document(alice, app, settings)
+        observation_id = detail["observations"][0]["id"]
+
+    with TestClient(app) as bob:
+        make_patient(bob, alias="Bob")
+        response = bob.post(
+            f"/api/observations/{observation_id}/review",
+            json={"action": "accept"},
+        )
+        assert response.status_code == 404

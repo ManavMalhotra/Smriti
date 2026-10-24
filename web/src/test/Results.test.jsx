@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import Results from "../components/Results";
 import summary from "../fixtures/summary.json";
@@ -24,6 +25,25 @@ describe("Results", () => {
     expect(
       screen.getByText("Flags are shown exactly as printed on the source document."),
     ).toBeInTheDocument();
+  });
+
+  it("marks pending values and links the live source page", async () => {
+    const pending = {
+      ...result,
+      excluded: [],
+      points: [{ ...result.points[0], status: "review" }],
+    };
+    render(<Results results={[pending]} />);
+
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "1 extracted value is awaiting review",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /open source for hba1c/i }),
+    );
+    expect(screen.getByRole("img", { name: "Source page 1" })).toBeInTheDocument();
   });
 
   it("surfaces excluded readings with their source document", () => {

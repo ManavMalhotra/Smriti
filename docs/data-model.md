@@ -141,7 +141,7 @@ A document with no row here is never queued (`FR-ING-09`). A revoked row blocks 
 - No `auto` row may belong to a document with `capture_type='handwritten'` (SI-01).
 - A handwritten document may only produce observations with `analyte_id IS NULL` (SI-02) — in practice the worker produces none.
 - `ref_low`/`ref_high` are written once and never updated (DR-02).
-- The current worker writes every extracted observation as `review`; nothing is auto-accepted.
+- The worker writes every extracted observation as `review`; only the review endpoint sets `auto` or `rejected`. A review action appends `audit` rows; the original value is retained in audit when corrected.
 
 ### 3.7 `directive`
 
@@ -272,7 +272,7 @@ document:  queued → processing → done
                      └─────────▶ failed
            (upload) ───────────▶ rejected_quality
 
-observation: review ──accept──▶ auto        [review endpoint not implemented]
+observation: review ──accept──▶ auto
              review ──correct─▶ auto
              review ──reject──▶ rejected
              (worker) ────────▶ review
@@ -282,7 +282,7 @@ job:       queued → running → done | failed
 directive: open → done | superseded | unknown_date
 ```
 
-`rejected` is terminal for charting purposes. The row stays for evaluation (DR-04). The current worker writes no `auto` or `rejected` observations.
+`rejected` is terminal for charting purposes. The row stays for evaluation (DR-04). The worker writes only `review`; the review endpoint writes `auto` or `rejected` and audits the transition. `documents[].review_count` is computed from `observation.status='review'`, not stored.
 
 ## 6. Migrations
 
@@ -309,4 +309,4 @@ Backups are not part of the database and must be deleted separately. A surviving
 
 ## 8. What is deliberately absent
 
-No external identity provider, no roles, no admin/operator account, no client-side medical-data store, and no implemented share link. Local accounts exist only to isolate patients on one machine. P3 normalisation/safety, the review loop, and P4 medication/directive state changes are not implemented in this schema version.
+No external identity provider, no roles, no admin/operator account, no client-side medical-data store, and no implemented share link. Local accounts exist only to isolate patients on one machine. The printed-value review loop is implemented; P3 normalisation/safety and P4 medication/directive state changes are not implemented in this schema version.

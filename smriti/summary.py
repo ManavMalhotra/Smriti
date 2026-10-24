@@ -183,6 +183,7 @@ def _results(conn: Connection, patient_id: str) -> list[Result]:
                 document_id=row._mapping["document_id"],
                 page=row._mapping["page"],
                 bbox=_normalise_bbox(row._mapping["bbox_json"]),
+                status=row._mapping["status"],
             )
         )
 
@@ -224,11 +225,14 @@ def build_summary(conn: Connection, patient_id: str) -> Summary:
     document_rows = conn.execute(
         text(
             """
-            SELECT id, doc_type, doc_date, collection_date, page_count, status, created_at
-            FROM document
-            WHERE patient_id = :patient_id
-            ORDER BY COALESCE(collection_date, doc_date, substr(created_at, 1, 10)) DESC,
-                     created_at DESC
+            SELECT d.id, d.doc_type, d.doc_date, d.collection_date, d.page_count,
+                   d.status, d.created_at,
+                   (SELECT COUNT(*) FROM observation o
+                    WHERE o.document_id = d.id AND o.status = 'review') AS review_count
+            FROM document d
+            WHERE d.patient_id = :patient_id
+            ORDER BY COALESCE(d.collection_date, d.doc_date, substr(d.created_at, 1, 10)) DESC,
+                     d.created_at DESC
             """
         ),
         {"patient_id": patient_id},
@@ -241,6 +245,7 @@ def build_summary(conn: Connection, patient_id: str) -> Summary:
             "collection_date": row._mapping["collection_date"],
             "page_count": row._mapping["page_count"],
             "status": row._mapping["status"],
+            "review_count": row._mapping["review_count"],
             "created_at": row._mapping["created_at"],
             "date": _doc_date(row._mapping),
         }
@@ -314,6 +319,7 @@ def build_summary(conn: Connection, patient_id: str) -> Summary:
                 collection_date=document["collection_date"],
                 page_count=document["page_count"],
                 status=document["status"],
+                review_count=document["review_count"],
             )
             for document in documents
         ],

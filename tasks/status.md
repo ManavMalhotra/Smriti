@@ -1,6 +1,6 @@
 # Build Status
 
-Updated: 2026-10-23
+Updated: 2026-10-24
 
 Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan.md` owns the approach, `tasks/todo.md` owns week order, and this file owns module status and the PR record.
 
@@ -11,12 +11,12 @@ Authority: `docs/SRS.md` > `specs/CAPABILITY-MAP.md` > module specs. `tasks/plan
 | foundation | P0 | code complete, ethics gate open | 8/8 code |
 | accounts | cross-cutting | code complete; no admin/roles | 4/4 |
 | intake | P1 (week 3) | code complete + authenticated local UI, 20-doc gate open | 7/9 |
-| extraction | P2 (weeks 4–6) | partial: local OCR, classifier, rule extraction, worker | 3/7 |
+| extraction | P2 (weeks 4-6) | partial: local OCR, classifier, rule extraction, dates, worker, review | 4/7 |
 | normalisation | P3 (week 8) | blocked | 0/4 |
 | safety | P3 (week 7) | blocked | 0/4 |
 | medications | P4 (week 10) | partial: printed rule extraction only | 1/3 |
 | directives | P4 (week 11) | blocked | 0/4 |
-| dashboard | P5 (weeks 6, 14) | fixture shell + live summary API + auth gate | 3/5 |
+| dashboard | P5 (weeks 6, 14) | live summary API + auth gate + source overlay + document review | 4/5 |
 | egress | P6 (week 8) | blocked; no egress path wired | 0/4 |
 | handwriting-assist | P7 (weeks 9–10) | gated by week-8 decision | 0/5 |
 | evaluation | P2+ (weeks 4–12) | blocked | 0/5 |
@@ -35,7 +35,7 @@ The P1 ethics and 20-document gates remain open. The user explicitly asked to co
 - [x] Per-patient accounts: scrypt hashes, hashed session tokens, HttpOnly/SameSite cookie, ownership checks
 - [x] `DELETE /api/patients/{id}` with cascade erase, file removal, audit row, demo read-only guard
 - [x] `web/src/fixtures/summary.json`: frozen contract fixture; bbox length and `from` alias tested
-- [x] `tests/`: 52 passed; non-loopback sockets blocked
+- [x] `tests/`: 62 passed; non-loopback sockets blocked
 - [x] CI workflow: Python 3.11, install, pytest
 - [ ] Ethics pack submitted (team task, OR-01) — blocks the phase gate
 - [~] Intended-use statement in the UI footer; report and demo still open (OR-05)
@@ -60,16 +60,18 @@ The P1 ethics and 20-document gates remain open. The user explicitly asked to co
 - [x] `smriti/classify.py`: local document-type classifier with confidence
 - [x] `smriti/analytes.py` + `data/analyte_map.csv`: initial analyte synonyms, units, display names
 - [x] `smriti/extract.py`: line grouping, printed lab-field rules, printed medication rules, bbox and review status
-- [x] `smriti/worker.py`: one background loop, job claim, page OCR, classification, extraction, failure state
-- [x] `smriti/summary.py`: real seven-key summary from stored documents/observations/medications/directives
-- [x] `tests/test_extract.py`, `tests/test_worker.py`: 12 tests; real OCR smoke-tested on a synthetic image and the existing 3-page discharge summary
+- [x] `smriti/worker.py`: one background loop, job claim, page OCR, classification, extraction, date extraction, failure state
+- [x] `smriti/summary.py`: real seven-key summary from stored documents/observations/medications/directives, with point status and document review counts
+- [x] `smriti/metadata.py`: conservative labelled collection/report date extraction; DOB lines are skipped and user dates win
+- [x] `api/routers/review.py` + `web/src/pages/DocumentDetail.jsx`: accept/correct/reject, ownership guards, audit rows, live summary refresh
+- [x] `web/src/components/PageOverlay.jsx` + source links: real page image with extracted bounding box
+- [x] `tests/test_extract.py`, `tests/test_worker.py`, `tests/test_metadata.py`, `tests/test_review.py`: 18 extraction/review tests; real OCR smoke-tested on synthetic lab/prescription images and a real end-to-end upload → review run
 - [ ] `smriti/assembly.py`: table regions, rows, columns
 - [ ] `smriti/resolution.py`: synonym → range → unit, 2-of-3 agreement
-- [ ] `POST /api/observations/{id}/review` and review UI
 - [ ] `eval/run_eval.py` + metrics on a labelled corpus
 - [ ] **Gate** one printed document parsed end to end; accuracy measured, not claimed
 
-The current extraction is line-based, not a table model. Every numeric field is written as `review`; no clinical normalisation or safety gate runs. Handwritten documents produce no numeric fields. The existing real discharge summary is classified `other` with confidence `0.386` and `capture_type='handwritten'`, so it yields no numeric fields by design.
+The current extraction is line-based, not a table model. Every numeric field starts as `review`; only explicit review sets `auto` or `rejected`. No clinical normalisation or safety gate runs. Handwritten documents produce no numeric fields. The existing real discharge summary is classified `other` with confidence `0.386` and `capture_type='handwritten'`, so it yields no numeric fields by design.
 
 ## Week 2 — UI shell and local intake
 
@@ -81,9 +83,10 @@ The current extraction is line-based, not a table model. Every numeric field is 
 - [x] Account gate: register/sign-in, signed-in patient header, sign-out
 - [x] Local intake form: authenticated upload JPEG/PNG/PDF with local-only consent, automatic document-type detection, 2 s job polling, extracted fields and page text
 - [x] Live summary fetch for the signed-in patient; fixture remains the contract test
-- [x] NFR-09 keyboard focus on view changes, upload result, and form resets; WCAG AA text and 3:1 control borders on summary, intake, and auth
-- [x] 24 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
-- [ ] Review UI, clinician mode, sharing, and live source-image links from the dashboard (P3/P4/P5)
+- [x] NFR-09 keyboard focus on view changes, upload result, form resets, and document review; WCAG AA text and 3:1 control borders on summary, intake, review, and auth
+- [x] 30 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
+- [x] Review UI, live source-image links, and source-box overlay
+- [ ] Clinician mode, sharing, and full dashboard zones (P4/P5)
 
 ## Module backlog
 
@@ -158,7 +161,8 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-02a | `feat/intake-ui` | Local intake UI for P1: create patient, upload with local-only consent, queued result, page-1 preview, duplicate/error states | 18 frontend, 36 Python, build passed, live upload, 1280/390 visual checks | merged `0c0e343`, tag `intake-ui` |
 | PR-02b | `feat/a11y-hardening` | NFR-09: focus handoff on navigation, result, reset, and patient change; WCAG 1.4.11 control borders | 18 frontend, 36 Python, build passed, manual Tab/focus and contrast check | merged `60c017c`, tag `a11y-ui` |
 | PR-03a | `feat/patient-auth-ai` | Per-patient accounts, session isolation, local PaddleOCR/classifier/rule extraction, worker, real summary API, authenticated intake polling and extracted fields | 52 Python, 24 frontend, build passed, real OCR smoke test | merged `75faa50`, tag `patient-auth-ai` |
-| PR-03 | `feat/p2-extraction` | Full OCR assembly, resolver, review loop, eval skeleton | planned | not started |
+| PR-03b | `feat/document-review-mvp` | Review slice: accept/correct/reject with audit, review counts/status, labelled dates, live page image + bbox overlay, document review screen, extraction header/schedule fixes | 62 Python, 30 frontend, build passed, real OCR smoke + real end-to-end upload → review | pending merge, tag `document-review` |
+| PR-03 | `feat/p2-extraction` | Full OCR assembly, resolver, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
 | PR-06 | `feat/p5-dashboard` | Full summary zones, coverage, patient/clinician modes, share links | planned | not started |
@@ -171,6 +175,8 @@ PR-06a is a fixture-only slice of PR-06, pulled forward so the UI contract is vi
 PR-02b is a pulled-forward NFR-09 slice of Week 13 for the screens that exist. The full accessibility audit still covers review, clinician, and share screens when they are built.
 
 PR-03a is a partial P2 slice pulled forward with the account model. It does not close the P1 gate, does not implement P3/P4, and does not make accuracy claims.
+
+PR-03b is the review slice of P2. It does not implement table assembly, resolver/safety, handwriting review, or evaluation; review values remain unvalidated until the patient acts.
 
 ### PR-01 commits
 
@@ -218,7 +224,7 @@ PR-03a is a partial P2 slice pulled forward with the account model. It does not 
 
 - The P1 ethics pack, 20 real consented documents, and quality-gate precision check are still open. No extraction accuracy is claimed.
 - Extraction is line-based and rule-based, not a table model. Multi-column lab tables, labels after values, and unusual layouts will be missed or misread.
-- Every extracted numeric field is `review`; there is no review endpoint or review UI, and the summary currently includes review points so data is visible. This is not clinical validation.
+- Every extracted numeric field starts as `review`; the patient can accept, correct, or reject it. The summary includes pending points marked `Review`; this is not clinical validation.
 - No P3 normalisation, unit conversion, plausibility/arithmetic gates, or reference-range safety checks. `unit_norm` is always null from the worker.
 - Handwritten documents produce no numeric observations by design. Handwriting detection is a conservative heuristic, not a trained classifier; a shadowed printed page can fall back to `handwritten`.
 - The classifier is keyword-based. The existing 3-page discharge summary lands on `other` with confidence `0.386` and is treated as handwritten, so it yields no fields.
@@ -229,12 +235,12 @@ PR-03a is a partial P2 slice pulled forward with the account model. It does not 
 - The worker is one thread and holds the engine while OCR runs. App shutdown waits at most five seconds for the worker; a long OCR job can outlive shutdown.
 - The summary has no P4 directives yet, so `pending` is empty unless directives are inserted by another path. `problems` is always `[]`.
 - The trend chart only renders with more than one point; a single point stays a table.
-- Source paths show the normalised box; the dashboard does not yet link to live page images.
+- The dashboard source panel now shows the live page image and box. Crop-level zoom, multi-box navigation, and handwriting review are still open.
 
 ## Open contract decisions
 
-- The summary response is frozen as a fixture and `GET /api/patients/{id}/summary` is now implemented. The current implementation includes `review` points; freeze whether review values belong in the charted payload before P3.
-- Review response shape is not frozen; freeze it with the review loop.
+- The summary response is frozen as a fixture and `GET /api/patients/{id}/summary` is implemented. Pending points are included with `status="review"` and `documents[].review_count`; revisit before P3 if charting should exclude pending values.
+- The review response shape is now `{observation, summary}` and is documented in `docs/API.md`.
 - `problems` ships as `[]`; no diagnosis extraction is invented.
 - Share revoke endpoint is described in `docs/API.md` but not implemented; add with dashboard sharing.
 - Handwriting fields are contract-only; `handwriting.py` owns detection, assist owns ranking.

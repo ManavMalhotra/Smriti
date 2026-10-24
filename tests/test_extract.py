@@ -90,6 +90,35 @@ def test_extract_medication_line():
     assert medication.freq == "BD"
 
 
+def test_extract_medication_without_form_and_with_schedule():
+    extraction = extract_document(
+        [
+            [_word("Metformin 500 mg BD", 0.1, width=0.8)],
+            [_word("Tab. Telma 40 mg 1-0-0", 0.2, width=0.8)],
+        ],
+        "prescription",
+        "printed",
+    )
+    by_brand = {medication.brand_raw: medication for medication in extraction.medications}
+    assert by_brand["Metformin"].freq == "BD"
+    assert by_brand["Tab. Telma"].freq == "1-0-0"
+
+
+def test_header_ids_are_not_unresolved_fields():
+    extraction = extract_document(
+        [
+            [
+                _word("Patient: P-01", 0.1, width=0.4),
+                _word("Age: 45", 0.1, x=0.5, width=0.3),
+                _word("Report No: 12345", 0.2, width=0.5),
+            ]
+        ],
+        "lab_report",
+        "printed",
+    )
+    assert extraction.fields == []
+
+
 def test_handwritten_document_does_not_create_numeric_fields():
     extraction = extract_document(
         [[_word("HbA1c 8.9 %", 0.1)]],
