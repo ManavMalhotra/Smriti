@@ -83,6 +83,11 @@ def _date_in(text: str) -> date | None:
     return None
 
 
+def parse_date(text: str) -> date | None:
+    """Parse the first date-like value, using the same day-first rule as intake."""
+    return _date_in(text)
+
+
 def extract_document_dates(text: str) -> dict[str, str]:
     """Return labelled collection/report dates. Never guesses from a DOB."""
     found: dict[str, str] = {}

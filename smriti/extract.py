@@ -6,7 +6,10 @@ import re
 from dataclasses import dataclass
 
 from smriti.analytes import Analyte, analytes
+from smriti.assembly import assemble_page
+from smriti.engines import LOCAL_RULES
 from smriti.ocr import OcrWord
+from smriti.resolution import resolve
 
 _UNIT = re.compile(
     r"(?:%|mg/dL|g/dL|mmol/L|mEq/L|U/L|IU/L|cells/µL|cells/uL|/µL|"
@@ -82,6 +85,7 @@ class ExtractedField:
     page: int
     confidence: float
     mapping_rule: str
+    engine: str = str(LOCAL_RULES)
 
 
 @dataclass(frozen=True)
@@ -103,23 +107,7 @@ def _canonical_number(value: str) -> str:
 
 
 def _line_groups(words: list[OcrWord]) -> list[list[OcrWord]]:
-    ordered = sorted(words, key=lambda word: ((word.bbox[1] + word.bbox[3]) / 2, word.bbox[0]))
-    groups: list[list[OcrWord]] = []
-    for word in ordered:
-        center = (word.bbox[1] + word.bbox[3]) / 2
-        height = max(0.002, (word.bbox[3] - word.bbox[1]))
-        if not groups:
-            groups.append([word])
-            continue
-        last = groups[-1]
-        last_center = sum((item.bbox[1] + item.bbox[3]) / 2 for item in last) / len(last)
-        if abs(center - last_center) <= max(0.008, height * 0.7):
-            last.append(word)
-        else:
-            groups.append([word])
-    for group in groups:
-        group.sort(key=lambda word: word.bbox[0])
-    return groups
+    return [list(row.words) for row in assemble_page(words).rows]
 
 
 def words_to_text(words: list[OcrWord]) -> str:
@@ -128,8 +116,8 @@ def words_to_text(words: list[OcrWord]) -> str:
 
 def _line_bbox(words: list[OcrWord]) -> list[float]:
     return [
-        max(0.0, min(word.bbox[0] for word in words)),
-        max(0.0, min(word.bbox[1] for word in words)),
+        max(0.0, min(1.0, min(word.bbox[0] for word in words))),
+        max(0.0, min(1.0, min(word.bbox[1] for word in words))),
         max(0.0, min(1.0, max(word.bbox[2] for word in words))),
         max(0.0, min(1.0, max(word.bbox[3] for word in words))),
     ]
@@ -197,13 +185,13 @@ def _bbox_for_value(words: list[OcrWord], value: str) -> list[float]:
 
 
 def _extract_line(
-    words: list[OcrWord], page: int
+    words: list[OcrWord], page: int, engine: str
 ) -> list[ExtractedField]:
     text = " ".join(word.text for word in words)
     matches = _analyte_matches(text)
     fields: list[ExtractedField] = []
     if matches:
-        for index, (start, end, analyte, synonym) in enumerate(matches):
+        for index, (start, end, analyte, _synonym) in enumerate(matches):
             next_start = matches[index + 1][0] if index + 1 < len(matches) else len(text)
             tail = text[end:next_start]
             parsed = _parse_value(tail)
@@ -211,20 +199,23 @@ def _extract_line(
                 continue
             value_num, value_text, unit = parsed
             ref_low, ref_high = _parse_range(tail)
+            label_raw = text[start:end].strip()
+            resolution = resolve(label_raw, value_num, unit, ref_low, ref_high)
             fields.append(
                 ExtractedField(
-                    analyte_id=analyte.id,
-                    label_raw=text[start:end].strip(),
+                    analyte_id=resolution.analyte_id or analyte.id,
+                    label_raw=label_raw,
                     value_num=value_num,
                     value_text=value_text,
-                    unit_raw=unit or analyte.unit,
+                    unit_raw=unit,
                     ref_low=ref_low,
                     ref_high=ref_high,
                     flag_printed=_printed_flag(tail),
                     bbox=_bbox_for_value(words, value_text or value_num),
                     page=page,
-                    confidence=_confidence(words),
-                    mapping_rule="exact" if synonym == analyte.display.lower() else "synonym",
+                    confidence=resolution.confidence,
+                    mapping_rule=resolution.mapping_rule,
+                    engine=engine,
                 )
             )
         return fields
@@ -256,8 +247,9 @@ def _extract_line(
             flag_printed=_printed_flag(text),
             bbox=_bbox_for_value(words, value_text or value_num),
             page=page,
-            confidence=_confidence(words),
+            confidence=0.0,
             mapping_rule="unresolved",
+            engine=engine,
         )
     )
     return fields
@@ -287,14 +279,19 @@ def _extract_medications(words: list[OcrWord]) -> list[ExtractedMedication]:
 
 
 def extract_document(
-    pages: list[list[OcrWord]], doc_type: str, capture_type: str
+    pages: list[list[OcrWord]],
+    doc_type: str,
+    capture_type: str,
+    *,
+    engine: str = str(LOCAL_RULES),
 ) -> Extraction:
     fields: list[ExtractedField] = []
     medications: list[ExtractedMedication] = []
     for page_number, words in enumerate(pages, start=1):
-        for line in _line_groups(words):
+        for row in assemble_page(words).rows:
+            line = list(row.words)
             if capture_type == "printed" and doc_type in ("lab_report", "other"):
-                fields.extend(_extract_line(line, page_number))
+                fields.extend(_extract_line(line, page_number, engine))
             if capture_type == "printed" and doc_type in ("prescription", "pharmacy"):
                 medications.extend(_extract_medications(line))
     # Keep one field per analyte per printed line; OCR often repeats a label.

@@ -154,7 +154,7 @@ Rules the fixture enforces:
 - `results[].points[].status` is `auto` or `review`; rejected points are omitted.
 - `documents[].review_count` counts observations still awaiting review.
 
-**Current implementation limits:** `problems` is always `[]`; `pending` is populated only from stored directives; extraction currently writes no directives. `results` includes observations with `status='review'` so extracted data is visible; the UI marks those points `Review`. They are not clinically validated. P3 normalisation/safety gates are not implemented.
+**Current implementation limits:** `problems` is always `[]`; `pending` is populated from directives persisted by the worker. Directive grammar is rules-first and covers common printed phrasings; reminder UI, supersession, and directive evaluation are not implemented. `results` includes observations with `status='review'` so extracted data is visible; the UI marks those points `Review`. They are not clinically validated. P3 normalisation/safety gates are not implemented. The default evaluation fixture is synthetic, so no accuracy claim is made.
 
 ### `DELETE /api/patients/{id}`
 
@@ -232,7 +232,8 @@ Requires ownership.
       "value_num": "8.9", "value_text": "8.9", "unit_raw": "%",
       "unit_norm": null, "ref_low": "4", "ref_high": "6",
       "flag_printed": "H", "bbox": [0.1, 0.2, 0.3, 0.4], "page": 1,
-      "engine": "paddle+local-rules-v1", "confidence": 0.98,
+      "engine": "paddle:PP-OCRv5_mobile_det+en_PP-OCRv5_mobile_rec+local-rules:line-rules@1.0+cpu",
+      "confidence": 0.667,
       "status": "review", "reason": "Extracted locally; review required.",
       "mapping_rule": "exact", "created_at": "…" }
   ],
