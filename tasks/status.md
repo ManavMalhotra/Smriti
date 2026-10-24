@@ -161,7 +161,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-02a | `feat/intake-ui` | Local intake UI for P1: create patient, upload with local-only consent, queued result, page-1 preview, duplicate/error states | 18 frontend, 36 Python, build passed, live upload, 1280/390 visual checks | merged `0c0e343`, tag `intake-ui` |
 | PR-02b | `feat/a11y-hardening` | NFR-09: focus handoff on navigation, result, reset, and patient change; WCAG 1.4.11 control borders | 18 frontend, 36 Python, build passed, manual Tab/focus and contrast check | merged `60c017c`, tag `a11y-ui` |
 | PR-03a | `feat/patient-auth-ai` | Per-patient accounts, session isolation, local PaddleOCR/classifier/rule extraction, worker, real summary API, authenticated intake polling and extracted fields | 52 Python, 24 frontend, build passed, real OCR smoke test | merged `75faa50`, tag `patient-auth-ai` |
-| PR-03b | `feat/document-review-mvp` | Review slice: accept/correct/reject with audit, review counts/status, labelled dates, live page image + bbox overlay, document review screen, extraction header/schedule fixes | 62 Python, 30 frontend, build passed, real OCR smoke + real end-to-end upload → review | pending merge, tag `document-review` |
+| PR-03b | `feat/document-review-mvp` | Review slice: accept/correct/reject with audit, review counts/status, labelled dates, live page image + bbox overlay, document review screen, extraction header/schedule fixes | 62 Python, 30 frontend, build passed, real OCR smoke + real end-to-end upload → review | merged `80644ce`, tag `document-review` |
 | PR-03 | `feat/p2-extraction` | Full OCR assembly, resolver, eval skeleton | planned | not started |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
@@ -223,7 +223,8 @@ PR-03b is the review slice of P2. It does not implement table assembly, resolver
 ### PR-03b commits
 
 - `b0be15d` feat: add document review MVP with local OCR dates and source overlay
-- Merge: pending
+- `d7587dd` docs: record PR-03b feature commit
+- Merge: `80644ce` (tag `document-review`)
 
 ## Known limits at P2 partial
 
