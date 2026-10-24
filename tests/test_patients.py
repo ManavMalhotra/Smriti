@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from smriti.app import create_app
+
+pytestmark = pytest.mark.integration
 
 
 def _count(app, table: str) -> int:

@@ -8,6 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:unit": "vitest run .unit.test",
+    "test:integration": "vitest run .integration.test",
+    "test:system": "vitest run .system.test",
     "test:watch": "vitest"
   },
   "dependencies": {

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from smriti.ocr import OcrWord
 from smriti.worker import process_next
 from tests.factory import jpeg_bytes, make_patient, text_image
+
+pytestmark = pytest.mark.integration
 
 
 class _FakeOcr:

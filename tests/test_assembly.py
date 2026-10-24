@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from smriti.assembly import assemble_page
 from smriti.ocr import OcrWord
+
+
+pytestmark = pytest.mark.unit
 
 
 def _word(text: str, y: float, x: float, width: float = 0.1) -> OcrWord:

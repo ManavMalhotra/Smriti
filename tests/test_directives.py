@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import get_args
 
+import pytest
 from sqlalchemy import text
 
 from smriti.directives import extract_directives
@@ -10,6 +11,8 @@ from smriti.models import AnchorEvent
 from smriti.ocr import OcrWord
 from smriti.worker import process_next
 from tests.factory import jpeg_bytes, make_patient, text_image
+
+pytestmark = pytest.mark.integration
 
 
 def test_relative_directive_anchors_on_collection_date():

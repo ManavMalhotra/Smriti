@@ -35,8 +35,8 @@ The P1 ethics and 20-document gates remain open. The user explicitly asked to co
 - [x] Per-patient accounts: scrypt hashes, hashed session tokens, HttpOnly/SameSite cookie, ownership checks
 - [x] `DELETE /api/patients/{id}` with cascade erase, file removal, audit row, demo read-only guard
 - [x] `web/src/fixtures/summary.json`: frozen contract fixture; bbox length and `from` alias tested
-- [x] `tests/`: 87 passed; non-loopback sockets blocked
-- [x] CI workflow: Python 3.11, install, pytest
+- [x] `tests/`: 89 passed (38 unit, 49 integration, 2 system); non-loopback sockets blocked
+- [x] CI workflow: backend pytest + eval smoke, frontend tests + production build
 - [ ] Ethics pack submitted (team task, OR-01) — blocks the phase gate
 - [~] Intended-use statement in the UI footer; report and demo still open (OR-05)
 - [x] NumPy, OpenCV, Pillow, PyMuPDF added for P1 intake
@@ -69,7 +69,7 @@ The P1 ethics and 20-document gates remain open. The user explicitly asked to co
 - [x] `smriti/metadata.py`: conservative labelled collection/report date extraction; DOB lines are skipped and user dates win
 - [x] `api/routers/review.py` + `web/src/pages/DocumentDetail.jsx`: accept/correct/reject, ownership guards, audit rows, live summary refresh
 - [x] `web/src/components/PageOverlay.jsx` + source links: real page image with extracted bounding box
-- [x] `tests/test_extract.py`, `tests/test_worker.py`, `tests/test_metadata.py`, `tests/test_review.py`: extraction/review tests; real OCR smoke-tested on synthetic lab/prescription images and a real end-to-end upload → review run
+- [x] `tests/test_extract.py`, `tests/test_worker.py`, `tests/test_metadata.py`, `tests/test_review.py`, `tests/test_system.py`: extraction/review tests; real OCR smoke-tested on synthetic lab/prescription images and a real end-to-end upload → review run
 - [x] `eval/metrics.py`, `eval/run_eval.py`, `eval/kappa.py`, `eval/fixtures/smoke_docs.json`: offline F1/CER/exact-match/kappa harness with fixed-seed CIs
 - [x] `tests/test_assembly.py`, `tests/test_resolution.py`, `tests/test_directives.py`, `tests/test_eval_smoke.py`: 25 new local tests
 - [ ] Real-corpus field F1/CER on 10 and 40 documents; per-template breakdown
@@ -77,6 +77,18 @@ The P1 ethics and 20-document gates remain open. The user explicitly asked to co
 - [~] **Gate** one printed document parsed end to end: synthetic worker test and real PaddleOCR smoke pass; real-document accuracy gate open
 
 The extraction path now uses whitespace-only table assembly. It does not infer merged cells, so a layout that whitespace cannot separate stays one cell and is left for review. Every numeric field still starts as `review`; only explicit review sets `auto` or `rejected`. The resolver can mark a known label `unresolved` when fewer than two signals agree; the analyte id is retained so the patient can still review it. Directives are rules-first and store exact spans; past relative/absolute dates become `unknown_date`, and conditional/PRN directives have no due date. No clinical normalisation or safety gate runs. Handwritten documents produce no numeric fields. The existing real discharge summary is classified `other` with confidence `0.386` and `capture_type='handwritten'`, so it yields no numeric fields by design.
+
+## Test and maintainability slice (2026-10-24)
+
+- [x] Backend pytest markers registered in `pyproject.toml`: `unit`, `integration`, `system`
+- [x] All backend test modules classified; mixed directive module marked `integration` because it crosses the worker boundary
+- [x] `tests/test_system.py`: printed upload -> worker -> source page -> accept/correct/reject -> summary/audit; handwritten upload -> no numeric results or directives
+- [x] Frontend test filenames classified as `*.unit.test.jsx`, `*.integration.test.jsx`, `*.system.test.jsx`; npm scripts select each layer
+- [x] `docs/test-plan.md`: pyramid, commands, traceability, CI gates, known gaps
+- [x] `scripts/verify.ps1` + `scripts/verify.bat`: backend, frontend layers, build, and eval determinism
+- [x] CI split into backend and frontend jobs; frontend tests and build now run on push/PR
+- [x] Checks: 89 Python (38 unit, 49 integration, 2 system), 34 frontend (6 unit, 18 integration, 10 system), production build, eval determinism
+- [ ] Real-corpus and ethics gates remain open; these tests do not close them
 
 ## Week 2 — UI shell and local intake
 
@@ -89,7 +101,7 @@ The extraction path now uses whitespace-only table assembly. It does not infer m
 - [x] Local intake form: authenticated upload JPEG/PNG/PDF with local-only consent, automatic document-type detection, 2 s job polling, extracted fields and page text
 - [x] Live summary fetch for the signed-in patient; fixture remains the contract test
 - [x] NFR-09 keyboard focus on view changes, upload result, form resets, and document review; WCAG AA text and 3:1 control borders on summary, intake, review, and auth
-- [x] 34 Vitest tests including `jest-axe`; production build served by FastAPI at `/`
+- [x] 34 Vitest tests including `jest-axe` (6 unit, 18 integration, 10 system); production build served by FastAPI at `/`
 - [x] Review UI, live source-image links, and source-box overlay
 - [x] UI/UX pass: source page in a focus-trapped dialog, stacked mobile review cards with visible actions, review fields above the source page, no empty dashboard flash, short document references, and an explicit failed-extraction state
 - [ ] Clinician mode, sharing, and full dashboard zones (P4/P5)
@@ -173,6 +185,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-03b | `feat/document-review-mvp` | Review slice: accept/correct/reject with audit, review counts/status, labelled dates, live page image + bbox overlay, document review screen, extraction header/schedule fixes | 62 Python, 30 frontend, build passed, real OCR smoke + real end-to-end upload → review | merged `80644ce`, tag `document-review` |
 | PR-03c | `feat/ui-polish` | UI/UX pass: focus-trapped source dialog, stacked mobile review cards, review fields above the source page, no empty dashboard flash, short document references, explicit failed-extraction state | 62 Python, 34 frontend, build passed, real-OCR browser E2E, desktop/mobile CDP audit | merged `581dc34`, tag `ui-polish` |
 | PR-03 | `feat/week4-6-mvp` | Week 4–6 local slice: engine registry, whitespace assembly, 2-of-3 resolver, directive grammar/persistence, offline eval harness, Windows start scripts | 87 Python, 34 frontend, build passed, real PaddleOCR smoke, startup health check | merged `84dfbc2`, tag `week4-6-mvp` |
+| PR-03d | `test/maintainability` | Test pyramid: backend markers + system journeys, frontend layer scripts, verify scripts, test-plan docs, CI frontend job | 89 Python, 34 frontend, build, eval determinism | in progress |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
 | PR-06 | `feat/p5-dashboard` | Full summary zones, coverage, patient/clinician modes, share links | planned | not started |

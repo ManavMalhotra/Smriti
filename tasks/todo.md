@@ -8,6 +8,16 @@ Current slice: PR-03 (Week 4–6 local code) adds the engine registry, whitespac
 
 ---
 
+## Test and maintainability slice (2026-10-24)
+
+- [x] Register `unit`, `integration`, and `system` pytest markers in `pyproject.toml`
+- [x] Mark all backend test modules; add `tests/test_system.py` for printed and handwritten journeys
+- [x] Rename frontend tests to `*.unit.test.jsx`, `*.integration.test.jsx`, `*.system.test.jsx`; add npm layer scripts
+- [x] Write `docs/test-plan.md`; link it from `docs/index.md` and `README.md`
+- [x] Add `scripts/verify.ps1` and `scripts/verify.bat` for backend, frontend, build, and eval
+- [x] Split CI into backend and frontend jobs; run frontend tests and build
+- [ ] Re-run the full verification after future feature changes; update test counts in `docs/test-plan.md`
+
 ## Week 1 — Foundation
 
 - [x] `pyproject.toml` / `requirements.txt`: core deps pinned (fastapi, uvicorn, pydantic, sqlalchemy, python-multipart, httpx, pytest)
@@ -30,7 +40,7 @@ Current slice: PR-03 (Week 4–6 local code) adds the engine registry, whitespac
 
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
-- [x] Vite + Tailwind + Recharts shell renders the fixture and the live summary (patient mode; Recharts lazy-loads when a result has more than one point; 34 Vitest + axe tests)
+- [x] Vite + Tailwind + Recharts shell renders the fixture and the live summary (patient mode; Recharts lazy-loads when a result has more than one point; 34 Vitest + axe tests: 6 unit, 18 integration, 10 system)
 - [x] Keyboard focus management and WCAG AA contrast on summary + intake + auth (NFR-09, pulled forward from Week 13)
 - [x] Account gate: register/sign-in, signed-in patient header, sign-out
 - [x] Local intake form: authenticated upload JPEG/PNG/PDF with local-only consent, automatic type detection, 2 s polling, extracted fields and page text (pulled forward from Week 6)
@@ -48,7 +58,7 @@ Current slice: PR-03 (Week 4–6 local code) adds the engine registry, whitespac
 - [x] `smriti/ingest.py`: content hash, idempotent write, page split, job row
 - [x] `POST /api/documents`, `POST /api/documents/{id}/consent`
 - [x] `GET /api/documents/{id}/page/{n}`, `GET /api/documents/{id}`, `GET /api/jobs/{id}`
-- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`; full backend suite currently 87 passed
+- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`; full backend suite currently 89 passed (38 unit, 49 integration, 2 system)
 - [ ] 20 real documents in hand, consent rows recorded
 - [~] **GATE** five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
 

@@ -13,7 +13,7 @@ Reading order and authority. If two documents disagree, the one higher in this t
 | 7 | `docs/data-model.md` | Schema, state machines, indexes | **Done** |
 | 8 | `docs/API.md` | Implemented auth/document/job/summary/review endpoints, the frozen summary payload, and contract-only handwriting/share shapes | **Done** |
 | 9 | `docs/evaluation.md` | Truth set, metrics, pre-registered thresholds | Pending |
-| 10 | `docs/test-plan.md` | Verification matrix, CI gates | Pending |
+| 10 | `docs/test-plan.md` | Test pyramid, commands, traceability, CI gates, known gaps | **Done** |
 | 11 | `docs/annotation-guide.md` | How to label documents, kappa protocol | **Done** |
 | 12 | `docs/ethics-consent.md` | Ethics submission, consent, data handling | **Done** |
 | 13 | `docs/synopsis.md` | One-page project synopsis | **Done** |
@@ -48,4 +48,5 @@ The shortest path to judging the engineering:
 
 1. `specs/CAPABILITY-MAP.md` — the system in one table
 2. `specs/SPEC-egress.md` — the trust boundary
-3. `specs/SPEC-safety.md` — what the system refuses to do
+3. `docs/test-plan.md` — how the current build is verified
+4. `specs/SPEC-safety.md` — what the system refuses to do

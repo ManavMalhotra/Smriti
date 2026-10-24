@@ -37,8 +37,9 @@ specs/      capability map and one spec per module
 tasks/      implementation plan, task list, build status, PR log
 smriti/     config, schema, DB, models, auth, intake, OCR/classifier/assembly/resolver/extractor/directives, dates, worker, summary
 api/        routers and error shape
-tests/      87 offline Python tests with temp DB and upload dir
+tests/      89 offline Python tests: unit, integration, and system layers
 web/        Vite/React/Tailwind/Recharts shell, auth gate, intake, document review, 34 Vitest + axe tests
+scripts/    one-command verification for backend, frontend, build, and eval
 ```
 
 Start with `docs/index.md` — it lists the reading order and which document owns which decision.
@@ -92,6 +93,27 @@ npm --prefix web run dev
 ```
 
 The Vite dev server proxies `/api` to `http://127.0.0.1:8000`. `npm --prefix web run build` writes `web/dist`, which FastAPI mounts at `/`; open `http://127.0.0.1:8000/` after building. The summary view fetches the signed-in patient's live summary. Uploads and OCR stay on the device. Extracted numeric fields are review-only until the patient accepts or corrects them. The Week 4–6 slice adds engine version strings, whitespace table assembly, a deterministic resolver, rule-based directive dates, and an offline evaluation harness. P3 normalisation/safety gates, full P4 medication states/reminders, and real-corpus evaluation are not implemented yet.
+
+## Testing
+
+The test plan is `docs/test-plan.md`. Tests are grouped by the boundary they cross, not by moving files around:
+
+```powershell
+# Backend: 38 unit, 49 integration, 2 system
+.venv\Scripts\python.exe -m pytest -m unit
+.venv\Scripts\python.exe -m pytest -m integration
+.venv\Scripts\python.exe -m pytest -m system
+
+# Frontend: filename suffix selects the layer
+npm --prefix web run test:unit
+npm --prefix web run test:integration
+npm --prefix web run test:system
+
+# Everything, including the production build and eval smoke
+.\scripts\verify.ps1
+```
+
+Backend system tests use a fake OCR engine, a temporary database, and a temporary upload directory; they do not require PaddleOCR or a network. Frontend tests mock `fetch`. The autouse Python fixture blocks non-loopback sockets. No real patient data is committed.
 
 ## Evaluation
 

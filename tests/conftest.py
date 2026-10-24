@@ -10,6 +10,22 @@ from smriti.app import create_app
 from smriti.config import Settings
 
 
+_LAYERS = {"unit", "integration", "system"}
+
+
+def pytest_collection_modifyitems(config, items):
+    unmarked = [
+        item.nodeid
+        for item in items
+        if not any(marker.name in _LAYERS for marker in item.iter_markers())
+    ]
+    if unmarked:
+        raise pytest.UsageError(
+            "Every test needs a unit, integration, or system marker: "
+            + ", ".join(unmarked)
+        )
+
+
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     original_connect = socket.socket.connect
