@@ -172,7 +172,7 @@ No git remote is configured. "PR" here means a local feature branch merged into 
 | PR-03a | `feat/patient-auth-ai` | Per-patient accounts, session isolation, local PaddleOCR/classifier/rule extraction, worker, real summary API, authenticated intake polling and extracted fields | 52 Python, 24 frontend, build passed, real OCR smoke test | merged `75faa50`, tag `patient-auth-ai` |
 | PR-03b | `feat/document-review-mvp` | Review slice: accept/correct/reject with audit, review counts/status, labelled dates, live page image + bbox overlay, document review screen, extraction header/schedule fixes | 62 Python, 30 frontend, build passed, real OCR smoke + real end-to-end upload → review | merged `80644ce`, tag `document-review` |
 | PR-03c | `feat/ui-polish` | UI/UX pass: focus-trapped source dialog, stacked mobile review cards, review fields above the source page, no empty dashboard flash, short document references, explicit failed-extraction state | 62 Python, 34 frontend, build passed, real-OCR browser E2E, desktop/mobile CDP audit | merged `581dc34`, tag `ui-polish` |
-| PR-03 | `feat/week4-6-mvp` | Week 4–6 local slice: engine registry, whitespace assembly, 2-of-3 resolver, directive grammar/persistence, offline eval harness, Windows start scripts | 87 Python, 34 frontend, build passed, real PaddleOCR smoke, startup health check | in review, feature `1bf05f7` |
+| PR-03 | `feat/week4-6-mvp` | Week 4–6 local slice: engine registry, whitespace assembly, 2-of-3 resolver, directive grammar/persistence, offline eval harness, Windows start scripts | 87 Python, 34 frontend, build passed, real PaddleOCR smoke, startup health check | merged `84dfbc2`, tag `week4-6-mvp` |
 | PR-04 | `feat/p3-normalise-safety` | 30 analytes, unit conversion, five safety gates, source overlay | planned | not started |
 | PR-05 | `feat/p4-meds-directives` | Medication states and directive timing/anchoring | planned | not started |
 | PR-06 | `feat/p5-dashboard` | Full summary zones, coverage, patient/clinician modes, share links | planned | not started |
@@ -243,6 +243,7 @@ PR-03 is the Week 4–6 local code slice. It adds table assembly, resolution, di
 ### PR-03 commits
 
 - `1bf05f7` feat: complete Week 4-6 local extraction slice
+- Merge: `84dfbc2` (tag `week4-6-mvp`)
 
 ## Known limits at P2 Week 4–6 local slice
 
