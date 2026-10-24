@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from eval.kappa import main as kappa_main
 from eval.metrics import (
     bootstrap_ci,
@@ -10,6 +12,9 @@ from eval.metrics import (
     f1_from_counts,
 )
 from eval.run_eval import evaluate_fixture
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_f1_known_answer():

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from smriti.classify import classify_text
 from smriti.extract import extract_document
 from smriti.ocr import OcrWord, PaddleOcrEngine
+
+pytestmark = pytest.mark.unit
 
 
 def _word(text: str, y: float, x: float = 0.1, width: float = 0.5) -> OcrWord:

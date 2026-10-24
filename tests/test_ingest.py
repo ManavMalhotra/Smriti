@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from PIL import Image
 from sqlalchemy import text
 
@@ -14,6 +15,8 @@ from tests.factory import (
     text_image,
     upload,
 )
+
+pytestmark = pytest.mark.integration
 
 
 def _row(app, sql: str, params: dict | None = None):
@@ -29,7 +32,7 @@ def _count(app, sql: str, params: dict | None = None) -> int:
 def test_upload_creates_queued_document_and_job(client, app, settings):
     patient_id = make_patient(client)
     response = upload(client, patient_id, jpeg_bytes(text_image()))
-    assert response.status_code == 202
+    assert response.status_code == 202, response.text
 
     body = response.json()
     assert body["pages"] == 1

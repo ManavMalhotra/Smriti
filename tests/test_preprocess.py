@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from smriti.preprocess import PIPELINE, estimate_skew, normalise_page, to_bgr
 from tests.factory import skewed_image, text_image
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_preprocess_order_is_recorded_in_pipeline_order():

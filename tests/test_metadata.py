@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
 from smriti.metadata import extract_document_dates
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_extracts_labelled_collection_and_report_dates():

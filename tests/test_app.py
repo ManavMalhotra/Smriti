@@ -5,6 +5,8 @@ import pytest
 from smriti.app import create_app
 from smriti.config import BASE_DIR
 
+pytestmark = pytest.mark.integration
+
 
 def test_health(client):
     response = client.get("/api/health")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from PIL import Image
 
 from smriti import quality
@@ -15,6 +16,8 @@ from tests.factory import (
     skewed_image,
     text_image,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def _check(image: Image.Image):

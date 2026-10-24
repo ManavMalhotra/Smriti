@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
 from smriti.resolution import range_contains, resolve, unit_matches
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_two_of_three_agreement_table():

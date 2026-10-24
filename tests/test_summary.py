@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from smriti.config import BASE_DIR
 from smriti.models import Summary
+
+
+pytestmark = pytest.mark.integration
 
 FIXTURE = BASE_DIR / "web" / "src" / "fixtures" / "summary.json"
 SUMMARY_KEYS = {
