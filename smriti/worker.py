@@ -154,7 +154,7 @@ def _insert_extraction(
                 "page": field.page,
                 "engine": field.engine,
                 "confidence": field.confidence,
-                "reason": "Extracted locally; review required.",
+                "reason": field.reason or "Extracted locally; review required.",
                 "mapping_rule": field.mapping_rule,
                 "source": source,
                 "model_version": model_version,

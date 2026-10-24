@@ -7,6 +7,7 @@ that whitespace cannot separate stays a single cell and is left for review.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from smriti.ocr import OcrWord
@@ -66,6 +67,80 @@ class PageLayout:
     @property
     def rows(self) -> tuple[Row, ...]:
         return tuple(row for region in self.regions for row in region.rows)
+
+
+@dataclass(frozen=True)
+class ColumnSpan:
+    role: str  # "label" | "value" | "unit" | "ref_range"
+    x0: float
+    x1: float
+
+
+@dataclass(frozen=True)
+class TableTemplate:
+    columns: tuple[ColumnSpan, ...]
+    bbox: tuple[float, float, float, float]
+
+
+_HEADER_ROLE_PATTERNS = {
+    "label": re.compile(
+        r"\b(test|investigation|parameter|analyte|examination|description)\b", re.I
+    ),
+    "value": re.compile(
+        r"\b(result|results|observed|value|values|reading|patient\s*value)\b", re.I
+    ),
+    "unit": re.compile(r"\b(units?)\b", re.I),
+    "ref_range": re.compile(
+        r"\b(ref|reference|interval|biological|normal|range)\b", re.I
+    ),
+}
+
+
+def find_table_header(rows: tuple[Row, ...] | list[Row]) -> TableTemplate | None:
+    for row in rows:
+        roles_found = []
+        for cell in row.cells:
+            text = cell.text.lower()
+            cell_role = None
+            for role, pattern in _HEADER_ROLE_PATTERNS.items():
+                if pattern.search(text):
+                    cell_role = role
+                    break
+            if cell_role:
+                roles_found.append(ColumnSpan(cell_role, cell.bbox[0], cell.bbox[2]))
+
+        distinct_roles = {col.role for col in roles_found}
+        if len(distinct_roles) >= 2:
+            return TableTemplate(tuple(roles_found), row.bbox)
+    return None
+
+
+def align_words_to_template(
+    words: list[OcrWord], template: TableTemplate
+) -> dict[str, list[OcrWord]]:
+    aligned: dict[str, list[OcrWord]] = {
+        "label": [],
+        "value": [],
+        "unit": [],
+        "ref_range": [],
+    }
+    for word in words:
+        center_x = (word.bbox[0] + word.bbox[2]) / 2
+        best_role = None
+        min_dist = float("inf")
+        for col in template.columns:
+            if col.x0 <= center_x <= col.x1:
+                best_role = col.role
+                break
+            dist = min(abs(center_x - col.x0), abs(center_x - col.x1))
+            if dist < min_dist and dist < 0.08:
+                min_dist = dist
+                best_role = col.role
+        if best_role:
+            aligned[best_role].append(word)
+        elif template.columns and center_x < template.columns[0].x0:
+            aligned["label"].append(word)
+    return aligned
 
 
 def _row_groups(words: list[OcrWord]) -> list[list[OcrWord]]:

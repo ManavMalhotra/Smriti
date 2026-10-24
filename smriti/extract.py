@@ -6,7 +6,13 @@ import re
 from dataclasses import dataclass
 
 from smriti.analytes import Analyte, analytes
-from smriti.assembly import assemble_page
+from smriti.assembly import (
+    TableTemplate,
+    align_words_to_template,
+    assemble_page,
+    find_table_header,
+)
+from smriti.checks import check_bounds, validate_numeric_dual_read
 from smriti.engines import LOCAL_RULES
 from smriti.ocr import OcrWord
 from smriti.resolution import resolve
@@ -86,6 +92,7 @@ class ExtractedField:
     confidence: float
     mapping_rule: str
     engine: str = str(LOCAL_RULES)
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -184,8 +191,32 @@ def _bbox_for_value(words: list[OcrWord], value: str) -> list[float]:
     return _line_bbox(words)
 
 
+def _evaluate_field_reason(
+    analyte_id: str | None,
+    value_text: str,
+    value_num: str | None,
+    label_raw: str,
+    mapping_rule: str,
+) -> str:
+    verdict, bounds_reason = check_bounds(analyte_id, value_num)
+    if verdict == "review" and bounds_reason:
+        return bounds_reason
+
+    valid_num, dual_reason = validate_numeric_dual_read(value_text, value_num or "")
+    if not valid_num and dual_reason:
+        return f"Dual-read validation: {dual_reason}"
+
+    if mapping_rule == "unresolved":
+        return f"Unmapped parameter '{label_raw}'; review required."
+
+    return "Extracted locally; review required."
+
+
 def _extract_line(
-    words: list[OcrWord], page: int, engine: str
+    words: list[OcrWord],
+    page: int,
+    engine: str,
+    template: TableTemplate | None = None,
 ) -> list[ExtractedField]:
     text = " ".join(word.text for word in words)
     matches = _analyte_matches(text)
@@ -201,9 +232,13 @@ def _extract_line(
             ref_low, ref_high = _parse_range(tail)
             label_raw = text[start:end].strip()
             resolution = resolve(label_raw, value_num, unit, ref_low, ref_high)
+            analyte_id = resolution.analyte_id or analyte.id
+            reason = _evaluate_field_reason(
+                analyte_id, value_text, value_num, label_raw, resolution.mapping_rule
+            )
             fields.append(
                 ExtractedField(
-                    analyte_id=resolution.analyte_id or analyte.id,
+                    analyte_id=analyte_id,
                     label_raw=label_raw,
                     value_num=value_num,
                     value_text=value_text,
@@ -216,9 +251,55 @@ def _extract_line(
                     confidence=resolution.confidence,
                     mapping_rule=resolution.mapping_rule,
                     engine=engine,
+                    reason=reason,
                 )
             )
         return fields
+
+    # If table column template is carried, attempt column-aligned extraction
+    if template is not None:
+        aligned = align_words_to_template(words, template)
+        if aligned["value"] and aligned["label"]:
+            val_text = " ".join(w.text for w in aligned["value"])
+            parsed = _parse_value(val_text)
+            if parsed and parsed[0] is not None:
+                value_num, value_text, unit = parsed
+                unit_raw = unit or (" ".join(w.text for w in aligned["unit"]) if aligned["unit"] else None)
+                ref_text = " ".join(w.text for w in aligned["ref_range"]) if aligned["ref_range"] else ""
+                ref_low, ref_high = _parse_range(ref_text)
+                label_raw = " ".join(w.text for w in aligned["label"]).strip()
+
+                if len(label_raw) >= 2 and not any(
+                    re.search(rf"\b{re.escape(w)}\b", label_raw.lower())
+                    for w in _NON_RESULT_WORDS
+                ):
+                    resolution = resolve(label_raw, value_num, unit_raw, ref_low, ref_high)
+                    reason = _evaluate_field_reason(
+                        resolution.analyte_id,
+                        value_text,
+                        value_num,
+                        label_raw,
+                        resolution.mapping_rule,
+                    )
+                    fields.append(
+                        ExtractedField(
+                            analyte_id=resolution.analyte_id,
+                            label_raw=label_raw,
+                            value_num=value_num,
+                            value_text=value_text,
+                            unit_raw=unit_raw,
+                            ref_low=ref_low,
+                            ref_high=ref_high,
+                            flag_printed=_printed_flag(text),
+                            bbox=_bbox_for_value(words, value_text or value_num),
+                            page=page,
+                            confidence=resolution.confidence,
+                            mapping_rule=resolution.mapping_rule,
+                            engine=engine,
+                            reason=reason,
+                        )
+                    )
+                    return fields
 
     lowered = text.lower()
     if any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in _NON_RESULT_WORDS):
@@ -235,6 +316,9 @@ def _extract_line(
         return fields
     label_raw = label_match.group(0).strip()
     ref_low, ref_high = _parse_range(text)
+    reason = _evaluate_field_reason(
+        None, value_text, value_num, label_raw, "unresolved"
+    )
     fields.append(
         ExtractedField(
             analyte_id=None,
@@ -250,6 +334,7 @@ def _extract_line(
             confidence=0.0,
             mapping_rule="unresolved",
             engine=engine,
+            reason=reason,
         )
     )
     return fields
@@ -287,15 +372,28 @@ def extract_document(
 ) -> Extraction:
     fields: list[ExtractedField] = []
     medications: list[ExtractedMedication] = []
+    carried_template: TableTemplate | None = None
+
     for page_number, words in enumerate(pages, start=1):
-        for row in assemble_page(words).rows:
+        layout = assemble_page(words)
+        page_header = find_table_header(layout.rows)
+        if page_header is not None:
+            carried_template = page_header
+
+        for row in layout.rows:
+            # Skip the table header row itself from becoming a test field
+            if page_header is not None and row.bbox == page_header.bbox:
+                continue
+
             line = list(row.words)
             if capture_type == "printed" and doc_type in (
                 "lab_report",
                 "other",
                 "discharge_summary",
             ):
-                fields.extend(_extract_line(line, page_number, engine))
+                fields.extend(
+                    _extract_line(line, page_number, engine, template=carried_template)
+                )
             if capture_type == "printed" and doc_type in (
                 "prescription",
                 "pharmacy",

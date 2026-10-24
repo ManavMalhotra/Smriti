@@ -1,0 +1,248 @@
+"""Safety checks, biological bounds, and numeric validation.
+
+Rejects or routes to review impossible biological values and internally
+inconsistent laboratory measurements before they reach a patient timeline.
+"""
+
+from __future__ import annotations
+
+import csv
+import math
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+BOUNDS_PATH = Path(__file__).resolve().parents[1] / "data" / "bounds.csv"
+
+# Strict numeric regex: optional leading < or >, optional negative, valid float
+_STRICT_NUMERIC = re.compile(r"^[<>]?\s*(-?\d+(?:\.\d+)?)$")
+_SUSPICIOUS_DIGIT_CHARS = re.compile(r"[OoIlSB]")
+
+
+@dataclass(frozen=True)
+class Bounds:
+    analyte_id: str
+    hard_low: float
+    hard_high: float
+    source_citation: str
+
+
+_BOUNDS_CACHE: dict[str, Bounds] | None = None
+
+
+def load_bounds(path: Path | str = BOUNDS_PATH) -> dict[str, Bounds]:
+    global _BOUNDS_CACHE
+    if _BOUNDS_CACHE is not None and Path(path) == BOUNDS_PATH:
+        return _BOUNDS_CACHE
+
+    bounds_map: dict[str, Bounds] = {}
+    csv_path = Path(path)
+    if not csv_path.is_file():
+        return {}
+
+    with open(csv_path, "r", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            analyte_id = row["analyte_id"].strip().lower()
+            hard_low = float(row["hard_low"].strip())
+            hard_high = float(row["hard_high"].strip())
+            citation = row.get("source_citation", "").strip()
+
+            if hard_low >= hard_high:
+                raise ValueError(
+                    f"Invalid bounds for '{analyte_id}': hard_low ({hard_low}) "
+                    f"must be strictly less than hard_high ({hard_high})"
+                )
+
+            bounds_map[analyte_id] = Bounds(
+                analyte_id=analyte_id,
+                hard_low=hard_low,
+                hard_high=hard_high,
+                source_citation=citation,
+            )
+
+    if Path(path) == BOUNDS_PATH:
+        _BOUNDS_CACHE = bounds_map
+    return bounds_map
+
+
+BoundsVerdict = Literal["pass", "review", "skipped"]
+
+
+def check_bounds(
+    analyte_id: str | None,
+    value: str | float | None,
+    bounds_map: dict[str, Bounds] | None = None,
+) -> tuple[BoundsVerdict, str | None]:
+    if analyte_id is None or value is None:
+        return "skipped", None
+
+    if bounds_map is None:
+        bounds_map = load_bounds()
+
+    bound = bounds_map.get(analyte_id.lower())
+    if bound is None:
+        return "skipped", None
+
+    try:
+        val_num = float(str(value).strip().lstrip("<>"))
+    except (ValueError, TypeError):
+        return "review", f"Cannot convert value '{value}' to numeric for bounds check"
+
+    if val_num < bound.hard_low or val_num > bound.hard_high:
+        reason = (
+            f"SI-03: value {val_num} out of biological bounds "
+            f"[{bound.hard_low}, {bound.hard_high}] ({bound.source_citation})"
+        )
+        return "review", reason
+
+    return "pass", None
+
+
+def validate_numeric_dual_read(
+    raw_token: str,
+    parsed_value: str,
+) -> tuple[bool, str | None]:
+    """Zero-tolerance dual read numeric validation.
+
+    Ensures parsed digits match the raw token with no OCR character confusion
+    or hallucinated digit insertions.
+    """
+    clean_raw = raw_token.strip()
+    clean_parsed = parsed_value.strip().lstrip("<>")
+
+    if not _STRICT_NUMERIC.match(clean_parsed):
+        return False, f"Parsed value '{clean_parsed}' does not conform to strict numeric pattern"
+
+    try:
+        float(clean_parsed)
+    except ValueError:
+        return False, f"Parsed value '{clean_parsed}' cannot be represented as float"
+
+    # Check for character confusion in numeric context (e.g. 1O.5 instead of 10.5)
+    # If the raw token contains digits mixed with letters like O, l, S, B
+    digits_in_raw = re.findall(r"\d", clean_raw)
+    digits_in_parsed = re.findall(r"\d", clean_parsed)
+
+    if not digits_in_parsed:
+        return False, "No digits found in parsed numeric value"
+
+    # Check for decimal point consistency
+    raw_decimals = clean_raw.count(".")
+    parsed_decimals = clean_parsed.count(".")
+    if raw_decimals > 1 or parsed_decimals > 1:
+        return False, f"Malformed decimal points in numeric token (raw: '{clean_raw}')"
+
+    # Confusable characters inside a predominantly numeric token
+    has_digits = bool(digits_in_raw)
+    has_confusables = bool(_SUSPICIOUS_DIGIT_CHARS.search(clean_raw))
+    if has_digits and has_confusables:
+        # Check if the confusable is surrounded by digits or dots (e.g. '8.O', 'l26')
+        if re.search(r"(?:\d|\.)[OoIlSB]|[OoIlSB](?:\d|\.)", clean_raw):
+            return False, f"Suspicious character confusion in numeric token: '{clean_raw}'"
+
+    return True, None
+
+
+# Arithmetic consistency gates (G1-G5) from SPEC-safety
+def check_dlc(
+    neutrophils: float | None,
+    lymphocytes: float | None,
+    monocytes: float | None = 0.0,
+    eosinophils: float | None = 0.0,
+    basophils: float | None = 0.0,
+) -> tuple[BoundsVerdict, str | None]:
+    """Gate G1: DLC sum = 100 ± 2 %."""
+    if neutrophils is None or lymphocytes is None:
+        return "skipped", None
+    total = (
+        neutrophils
+        + lymphocytes
+        + (monocytes or 0.0)
+        + (eosinophils or 0.0)
+        + (basophils or 0.0)
+    )
+    if abs(total - 100.0) > 2.0:
+        return "review", f"G1: DLC sum ({total:.1f}%) deviates from 100% by > 2%"
+    return "pass", None
+
+
+def check_friedewald(
+    total_cholesterol: float | None,
+    hdl: float | None,
+    triglycerides: float | None,
+    ldl: float | None,
+) -> tuple[BoundsVerdict, str | None]:
+    """Gate G2: Friedewald LDL = TC - HDL - TG/5 (only when TG <= 400 mg/dL)."""
+    if any(v is None for v in (total_cholesterol, hdl, triglycerides, ldl)):
+        return "skipped", None
+    assert total_cholesterol is not None and hdl is not None and triglycerides is not None and ldl is not None
+    if triglycerides > 400.0:
+        return "skipped", "G2: Friedewald invalid when TG > 400 mg/dL"
+
+    calculated_ldl = total_cholesterol - hdl - (triglycerides / 5.0)
+    # Tolerance: ± 10 % or ± 5 mg/dL
+    tolerance = max(5.0, abs(ldl) * 0.10)
+    if abs(ldl - calculated_ldl) > tolerance:
+        return (
+            "review",
+            f"G2: Reported LDL ({ldl}) differs from Friedewald calculated LDL ({calculated_ldl:.1f})",
+        )
+    return "pass", None
+
+
+def check_bilirubin(
+    total: float | None,
+    direct: float | None,
+    indirect: float | None,
+) -> tuple[BoundsVerdict, str | None]:
+    """Gate G3: Total bilirubin = Direct + Indirect ± 0.2 mg/dL."""
+    if any(v is None for v in (total, direct, indirect)):
+        return "skipped", None
+    assert total is not None and direct is not None and indirect is not None
+    calculated = direct + indirect
+    if abs(total - calculated) > 0.2:
+        return (
+            "review",
+            f"G3: Total bilirubin ({total}) != direct ({direct}) + indirect ({indirect}) [diff: {abs(total - calculated):.2f}]",
+        )
+    return "pass", None
+
+
+def check_mcv(
+    hct: float | None,
+    rbc: float | None,
+    mcv: float | None,
+) -> tuple[BoundsVerdict, str | None]:
+    """Gate G4: MCV = Hct / RBC * 10 ± 1 fL."""
+    if any(v is None for v in (hct, rbc, mcv)):
+        return "skipped", None
+    assert hct is not None and rbc is not None and mcv is not None
+    if rbc <= 0:
+        return "skipped", "G4: RBC count non-positive"
+    calculated = (hct / rbc) * 10.0
+    if abs(mcv - calculated) > 1.0:
+        return (
+            "review",
+            f"G4: MCV ({mcv}) differs from Hct/RBC*10 ({calculated:.1f})",
+        )
+    return "pass", None
+
+
+def check_anc(
+    wbc: float | None,
+    neutrophil_pct: float | None,
+    anc: float | None,
+) -> tuple[BoundsVerdict, str | None]:
+    """Gate G5: ANC = WBC * neutrophil % / 100 ± 0.1 (in 10^3/uL)."""
+    if any(v is None for v in (wbc, neutrophil_pct, anc)):
+        return "skipped", None
+    assert wbc is not None and neutrophil_pct is not None and anc is not None
+    calculated = wbc * (neutrophil_pct / 100.0)
+    if abs(anc - calculated) > 0.15 * max(1.0, anc):
+        return (
+            "review",
+            f"G5: ANC ({anc}) differs from WBC * neutrophil% ({calculated:.1f})",
+        )
+    return "pass", None

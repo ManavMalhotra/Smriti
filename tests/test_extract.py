@@ -111,6 +111,67 @@ def test_extract_imaging_report_has_no_numeric_fields():
     assert extraction.fields == []
 
 
+def test_cross_page_header_carry():
+    # Page 1: Header row + 1 test row
+    page1_words = [
+        # Table Header
+        _word("Investigation", 0.05, x=0.10, width=0.20),
+        _word("Result", 0.05, x=0.45, width=0.10),
+        _word("Unit", 0.05, x=0.65, width=0.08),
+        _word("Reference Interval", 0.05, x=0.78, width=0.18),
+        # Data row
+        _word("HbA1c", 0.12, x=0.10, width=0.15),
+        _word("8.9", 0.12, x=0.45, width=0.06),
+        _word("%", 0.12, x=0.65, width=0.04),
+        _word("4.0-6.0", 0.12, x=0.78, width=0.12),
+    ]
+
+    # Page 2: No table header, row continues directly using carried column positions
+    page2_words = [
+        _word("Uric Acid", 0.10, x=0.10, width=0.18),
+        _word("6.2", 0.10, x=0.45, width=0.06),
+        _word("mg/dL", 0.10, x=0.65, width=0.08),
+        _word("3.5-7.2", 0.10, x=0.78, width=0.12),
+    ]
+
+    extraction = extract_document(
+        [page1_words, page2_words],
+        "lab_report",
+        "printed",
+    )
+
+    # Asserts that the header row itself is NOT extracted as an observation
+    labels = [field.label_raw for field in extraction.fields]
+    assert "Investigation" not in labels
+    assert "Result" not in labels
+
+    # Asserts both page 1 and carried-header page 2 observations are extracted
+    analytes = {field.analyte_id: field for field in extraction.fields}
+    assert "hba1c" in analytes
+    assert analytes["hba1c"].page == 1
+    assert analytes["hba1c"].value_num == "8.9"
+
+    assert "uric_acid" in analytes
+    assert analytes["uric_acid"].page == 2
+    assert analytes["uric_acid"].value_num == "6.2"
+
+
+def test_extract_out_of_bounds_reason():
+    words = [
+        _word("HbA1c", 0.10, x=0.10, width=0.15),
+        _word("45.0", 0.10, x=0.40, width=0.08),
+        _word("%", 0.10, x=0.55, width=0.04),
+    ]
+    extraction = extract_document([words], "lab_report", "printed")
+    assert len(extraction.fields) == 1
+    field = extraction.fields[0]
+    assert field.analyte_id == "hba1c"
+    assert field.value_num == "45"
+    assert field.reason is not None
+    assert "SI-03: value 45" in field.reason
+    assert "out of biological bounds" in field.reason
+
+
 def test_extract_known_lab_rows():
     words = [
         _word("HbA1c", 0.10),
