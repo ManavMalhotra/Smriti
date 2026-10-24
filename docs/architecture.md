@@ -28,10 +28,10 @@ The optional resolver remains a future P6 path. It is disabled by default and no
 
 | Container | Technology | Responsibility |
 |---|---|---|
-| Web app | React (JS), Vite, Tailwind, Recharts | Account gate, upload, progress, extracted fields, summary, source path |
-| API | FastAPI, Pydantic v2 | HTTP contract, auth, ownership checks, validation, orchestration |
+| Web app | React (JS), Vite, Tailwind, Recharts | Account gate, upload, progress, document review, summary, live source overlay |
+| API | FastAPI, Pydantic v2 | HTTP contract, auth, ownership checks, validation, review, orchestration |
 | Auth | `smriti/auth.py` | scrypt password hashes, hashed session tokens, cookie sessions, ownership helpers |
-| Pipeline | Python modules | Local OCR, document classification, rule extraction, summary assembly |
+| Pipeline | Python modules | Local OCR, classification, rule/date extraction, review transitions, summary assembly |
 | Worker | One background thread | Claims jobs from SQLite, runs OCR/classification/extraction |
 | Store | SQLite v2 (WAL) + filesystem | Accounts, records, page text; page images under `data/uploads/<patient-scoped-hash>/` |
 | Harness | `eval/` | Offline metrics from a frozen truth set (not implemented yet) |
@@ -71,7 +71,7 @@ Path traversal is prevented by addressing files by hash, never by a user-supplie
 
 ### 3.4 Presentation boundary — patient only
 
-The UI is patient mode only. There is no clinician mode or share view in this build. Every displayed value keeps its document, page, and bounding box, and extracted values are marked as requiring review.
+The UI is patient mode only. There is no clinician mode or share view in this build. Every displayed value keeps its document, page, and bounding box. The dashboard shows the source page with the extracted box; pending values are marked `Review`, and the document review screen accepts, corrects, or rejects each field.
 
 ## 4. Data flow
 
@@ -88,10 +88,16 @@ POST /api/documents (session cookie; patient_id must be the signed-in patient)
 worker claims job (BEGIN IMMEDIATE)
    ├─ per page: PaddleOCR → words + boxes → page_text
    ├─ classify document type from page text
+   ├─ extract labelled collection/report dates from OCR text
    ├─ printed lab/other: line-based analyte rules → review observations
    ├─ printed prescription/pharmacy: medication rules → prescribed rows
    ├─ handwritten: no numeric extraction (SI-01/SI-02)
-   └─ commit document status=done, processed_at
+   └─ commit document status=done, processed_at, dates (user values win)
+
+POST /api/observations/{id}/review
+   ├─ accept/correct: mapped printed value → auto, audit
+   ├─ reject: → rejected, audit
+   └─ return updated observation + recomputed summary
 
 GET /api/patients/{id}/summary
    └─ build the frozen seven-key payload from documents, observations,
@@ -100,7 +106,7 @@ GET /api/patients/{id}/summary
 
 A failed job marks the job and document `failed`; page text already written for earlier pages remains for diagnosis, but no observation/medication rows are committed for the failed run.
 
-The summary currently includes `review` observations so extracted data is visible. They are not clinically validated results. P3 normalisation/safety gates and the review endpoint are not implemented.
+The summary includes `review` observations so extracted data is visible and marks them with `status="review"`; accepted values are `auto`, rejected values are omitted. They are not clinically validated results. P3 normalisation/safety gates are not implemented.
 
 ## 5. Runtime profiles
 
@@ -123,7 +129,7 @@ The summary currently includes `review` observations so extracted data is visibl
 | Session expired | `401 session_expired`; the UI returns to sign-in |
 | Legacy patient unowned | First registration claims it; otherwise records remain inaccessible until a claim path exists |
 
-No failure mode guesses a value. Extracted numeric fields are written with `status='review'`; nothing is auto-accepted.
+No failure mode guesses a value. The worker writes extracted numeric fields with `status='review'`; only an explicit patient review sets `auto` or `rejected`.
 
 ## 7. Deployment
 

@@ -25,7 +25,7 @@ function _fieldLabel(field) {
   return field.label_raw || field.analyte_id || "Unmapped field";
 }
 
-export default function Intake({ patient, onDone, onSignOut }) {
+export default function Intake({ patient, onDone, onOpenDocument, onSignOut }) {
   const [file, setFile] = useState(null);
   const [docType, setDocType] = useState("auto");
   const [docDate, setDocDate] = useState("");
@@ -307,6 +307,15 @@ export default function Intake({ patient, onDone, onSignOut }) {
             ) : null}
 
             <div className="form-actions">
+              {onOpenDocument && result.documentId ? (
+                <button
+                  type="button"
+                  className={observations.length > 0 ? "button-primary" : "button-secondary"}
+                  onClick={() => onOpenDocument(result.documentId)}
+                >
+                  {observations.length > 0 ? "Review extracted fields" : "Open document"}
+                </button>
+              ) : null}
               <button type="button" className="button-secondary" onClick={resetUpload}>
                 Add another document
               </button>

@@ -12,6 +12,7 @@ class _FakeOcr:
 
     def read(self, _path):
         return [
+            OcrWord("Collection Date: 02/11/2025", [0.1, 0.04, 0.8, 0.08], 0.98),
             OcrWord("HbA1c 8.9 % 4.0-6.0", [0.1, 0.10, 0.8, 0.14], 0.98),
             OcrWord("Glucose 126 mg/dL 70-100", [0.1, 0.20, 0.8, 0.24], 0.97),
         ]
@@ -49,6 +50,7 @@ def test_worker_extracts_lab_report_and_summary(client, app, settings):
     detail = document.json()
     assert detail["doc_type"] == "lab_report"
     assert detail["status"] == "done"
+    assert detail["collection_date"] == "2025-11-02"
     assert len(detail["observations"]) == 2
     assert len(detail["page_text"]) == 1
     assert "HbA1c" in detail["page_text"][0]["text"]
@@ -59,9 +61,11 @@ def test_worker_extracts_lab_report_and_summary(client, app, settings):
     data = summary.json()
     assert data["patient"]["alias"] == "P-01"
     assert len(data["documents"]) == 1
+    assert data["documents"][0]["review_count"] == 2
     assert len(data["results"]) == 2
     by_display = {result["display"]: result for result in data["results"]}
     assert by_display["HbA1c"]["points"][0]["value"] == 8.9
+    assert by_display["HbA1c"]["points"][0]["status"] == "review"
     assert by_display["Glucose"]["points"][0]["value"] == 126.0
 
 

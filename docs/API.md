@@ -1,6 +1,6 @@
 # API Contract
 
-Status: v1.2. The auth, document, job, patient-summary, and erase-all endpoints are implemented. Sections marked **contract-only** are frozen shapes for later phases and are not served yet.
+Status: v1.3. The auth, document, job, patient-summary, observation-review, and erase-all endpoints are implemented. Sections marked **contract-only** are frozen shapes for later phases and are not served yet.
 
 Base path: `/api`. All requests and responses are JSON except the upload (`multipart/form-data`) and the page-image response (`image/webp`).
 
@@ -124,7 +124,7 @@ Seven keys, no more. Frozen in week 2; validated in CI against `web/src/fixtures
       "points": [
         { "date": "2025-11-02", "value": 8.9, "flag_printed": "H",
           "observation_id": "…", "document_id": "…", "page": 1,
-          "bbox": [0.61, 0.42, 0.78, 0.47] }
+          "bbox": [0.61, 0.42, 0.78, 0.47], "status": "auto" }
       ],
       "excluded": [
         { "document_id": "…", "reason": "plausibility_bound" }
@@ -138,7 +138,8 @@ Seven keys, no more. Frozen in week 2; validated in CI against `web/src/fixtures
   ],
   "documents": [
     { "id": "…", "doc_type": "lab_report", "doc_date": "2025-11-02",
-      "collection_date": "2025-11-02", "page_count": 2, "status": "done" }
+      "collection_date": "2025-11-02", "page_count": 2, "status": "done",
+      "review_count": 2 }
   ]
 }
 ```
@@ -150,8 +151,10 @@ Rules the fixture enforces:
 - `medications[].state` is never merged; the same drug may appear three times.
 - `pending` contains no item whose `due_date` was already past at extraction.
 - `coverage.gaps[].text` states a duration, never an interpretation.
+- `results[].points[].status` is `auto` or `review`; rejected points are omitted.
+- `documents[].review_count` counts observations still awaiting review.
 
-**Current implementation limits:** `problems` is always `[]`; `pending` is populated only from stored directives; extraction currently writes no directives. `results` includes observations with `status='review'` so extracted data is visible. They are not clinically validated; P3 normalisation/safety gates and the review endpoint are not implemented.
+**Current implementation limits:** `problems` is always `[]`; `pending` is populated only from stored directives; extraction currently writes no directives. `results` includes observations with `status='review'` so extracted data is visible; the UI marks those points `Review`. They are not clinically validated. P3 normalisation/safety gates are not implemented.
 
 ### `DELETE /api/patients/{id}`
 
@@ -175,6 +178,8 @@ Requires the session cookie. `multipart/form-data`:
 | `consent_scope` | `local` \| `local_plus_projection` | yes |
 
 Omit `doc_type` (or send `other`) to let the local worker classify the document. **No `capture_type` field.** It is derived server-side (`FR-ING-02`).
+
+When `doc_date` or `collection_date` is omitted, the worker extracts a labelled date from the local OCR text. Supplied values are preserved; date-of-birth lines are never used.
 
 `202`:
 
@@ -236,7 +241,7 @@ Requires ownership.
 }
 ```
 
-Extracted observations are always `review`; the current worker never writes `auto`. Handwritten documents produce no numeric observations.
+Extracted observations are written as `review`; the review endpoint moves them to `auto` or `rejected`. Handwritten documents produce no numeric observations.
 
 ### `GET /api/documents/{id}/page/{n}`
 
@@ -258,9 +263,9 @@ Requires ownership.
 
 ---
 
-## 6. Review — contract-only
+## 6. Review
 
-Not served yet. The current worker writes every extracted observation as `review`.
+Requires the session cookie. The owning patient may review a field; another patient gets `404`. The demo profile returns `403 demo_read_only`.
 
 ### `POST /api/observations/{id}/review`
 
@@ -271,12 +276,20 @@ Not served yet. The current worker writes every extracted observation as `review
 | Action | Body | Result |
 |---|---|---|
 | `accept` | — | `status=auto`, audit row |
-| `correct` | `value_num`, optional `unit_norm` | `status=auto`, original retained (DR-03) |
-| `reject` | `reason` | `status=rejected`, never charted |
+| `correct` | `value_num`, optional `unit_norm` | `status=auto`, original retained in audit (DR-03) |
+| `reject` | optional `reason` | `status=rejected`, never charted |
 
-`200` → the updated observation plus the recomputed summary fragment (`FR-REV-05`).
+`200` → the updated observation plus the recomputed seven-key summary (`FR-REV-05`):
 
-Handwritten fields are reviewed through §8, not here.
+```json
+{
+  "observation": { "id": "…", "status": "auto", "value_num": "13.4", "…": "…" },
+  "summary": { "patient": {}, "coverage": {}, "problems": [], "medications": [],
+               "results": [], "pending": [], "documents": [] }
+}
+```
+
+`accept` and `correct` require a mapped analyte and a numeric value. Unmapped fields can only be rejected. Handwritten fields return `409 handwriting_review_required` until the handwriting flow exists. A second review returns `409 already_reviewed`. A corrected value must be a finite decimal; it is stored canonically (`9.10` → `9.1`). Every action writes `audit` rows for `status`, and for changed `value_num`/`unit_norm`.
 
 ---
 
@@ -370,3 +383,4 @@ Every attempt writes an audit row (`FR-SHR-04`).
 | 1.0 | 23 Oct 2026 | Initial frozen contract: 15 endpoints, seven-key summary payload |
 | 1.1 | 23 Oct 2026 | Add `GET /api/documents/{id}/page/{n}`; document quality-rejection semantics |
 | 1.2 | 23 Oct 2026 | Per-patient accounts and session auth; optional `doc_type`; authenticated document/job/summary routes; duplicate response fields; extracted detail fields; summary API live; review/handwriting/share marked contract-only |
+| 1.3 | 24 Oct 2026 | Observation review endpoint and audit; `status` on result points; `review_count` on documents; labelled date extraction; review UI and live page images |

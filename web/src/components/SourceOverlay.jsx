@@ -1,3 +1,4 @@
+import PageOverlay from "./PageOverlay";
 import { formatDate } from "../lib/format";
 
 export default function SourceOverlay({ source, onClose }) {
@@ -27,7 +28,13 @@ export default function SourceOverlay({ source, onClose }) {
       </div>
 
       <div className="source-body">
-        {hasBox ? (
+        {source.pageUrl ? (
+          <PageOverlay
+            src={source.pageUrl}
+            alt={`Source page ${source.page}`}
+            boxes={hasBox ? [bbox] : []}
+          />
+        ) : hasBox ? (
           <div
             className="source-box"
             role="img"

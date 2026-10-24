@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api.routers import auth, documents, jobs, patients
+from api.routers import auth, documents, jobs, patients, review
 from smriti.config import BASE_DIR, Settings, load_settings
 from smriti.db import create_db_engine, init_db
 from smriti.worker import start_worker
@@ -64,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(patients.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(review.router, prefix="/api")
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

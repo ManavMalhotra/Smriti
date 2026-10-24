@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import DocumentDetail from "./pages/DocumentDetail";
 import Intake from "./pages/Intake";
 import { requestJson } from "./lib/api";
 
@@ -11,6 +12,7 @@ export default function App() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
   const [view, setView] = useState("summary");
+  const [documentId, setDocumentId] = useState(null);
   const [refresh, setRefresh] = useState(0);
   const previousView = useRef(view);
   const previousPatient = useRef(null);
@@ -81,15 +83,23 @@ export default function App() {
     }
     setPatient(null);
     setSummaryData(null);
+    setDocumentId(null);
     setView("summary");
   }
 
   function handleAuthenticated(data) {
     setPatient(data);
+    setDocumentId(null);
     setView("summary");
   }
 
+  function handleOpenDocument(id) {
+    setDocumentId(id);
+    setView("document");
+  }
+
   function handleDone() {
+    setDocumentId(null);
     setView("summary");
     setRefresh((value) => value + 1);
   }
@@ -112,7 +122,24 @@ export default function App() {
 
   if (view === "intake") {
     return (
-      <Intake patient={patient} onDone={handleDone} onSignOut={handleLogout} />
+      <Intake
+        patient={patient}
+        onDone={handleDone}
+        onOpenDocument={handleOpenDocument}
+        onSignOut={handleLogout}
+      />
+    );
+  }
+
+  if (view === "document" && documentId) {
+    return (
+      <DocumentDetail
+        documentId={documentId}
+        patient={patient}
+        onBack={handleDone}
+        onSignOut={handleLogout}
+        onSummary={setSummaryData}
+      />
     );
   }
 
@@ -121,6 +148,7 @@ export default function App() {
       data={summaryData}
       patient={patient}
       onAdd={() => setView("intake")}
+      onOpenDocument={handleOpenDocument}
       onSignOut={handleLogout}
       loading={summaryLoading}
       error={summaryError}

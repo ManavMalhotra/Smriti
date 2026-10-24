@@ -84,6 +84,13 @@ class PageTextOut(StrictModel):
     engine: str
 
 
+class ObservationReview(StrictModel):
+    action: Literal["accept", "correct", "reject"]
+    value_num: str | None = Field(default=None, max_length=64)
+    unit_norm: str | None = Field(default=None, max_length=32)
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class ObservationOut(StrictModel):
     id: str
     document_id: str
@@ -209,6 +216,7 @@ class ResultPoint(StrictModel):
     document_id: str
     page: int = Field(ge=1)
     bbox: list[float]
+    status: Literal["auto", "review"] = "auto"
 
     @field_validator("bbox")
     @classmethod
@@ -250,6 +258,7 @@ class DocumentSummary(StrictModel):
     collection_date: date | None = None
     page_count: int = Field(ge=1)
     status: DocumentStatus
+    review_count: int = Field(default=0, ge=0)
 
 
 class Summary(StrictModel):

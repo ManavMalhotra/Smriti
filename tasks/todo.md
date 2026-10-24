@@ -29,7 +29,7 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 
 - [x] `web/src/fixtures/summary.json` frozen with 7 keys (FR-TIM-01) — pulled forward into P0
 - [x] `tests/test_summary.py::test_contract` validates fixture against Pydantic (NFR-12) — pulled forward into P0
-- [x] Vite + Tailwind + Recharts shell renders the fixture and the live summary (patient mode; Recharts lazy-loads when a result has more than one point; 24 Vitest + axe tests)
+- [x] Vite + Tailwind + Recharts shell renders the fixture and the live summary (patient mode; Recharts lazy-loads when a result has more than one point; 30 Vitest + axe tests)
 - [x] Keyboard focus management and WCAG AA contrast on summary + intake + auth (NFR-09, pulled forward from Week 13)
 - [x] Account gate: register/sign-in, signed-in patient header, sign-out
 - [x] Local intake form: authenticated upload JPEG/PNG/PDF with local-only consent, automatic type detection, 2 s polling, extracted fields and page text (pulled forward from Week 6)
@@ -47,7 +47,7 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 - [x] `smriti/ingest.py`: content hash, idempotent write, page split, job row
 - [x] `POST /api/documents`, `POST /api/documents/{id}/consent`
 - [x] `GET /api/documents/{id}/page/{n}`, `GET /api/documents/{id}`, `GET /api/jobs/{id}`
-- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`; full backend suite 52 passed
+- [x] `tests/test_ingest.py`, `tests/test_quality.py`, `tests/test_preprocess.py`; full backend suite 62 passed
 - [ ] 20 real documents in hand, consent rows recorded
 - [~] **GATE** five synthetic fixtures pass and EXIF/GPS is stripped; 20 real documents and the quality-gate precision check are still open
 
@@ -55,6 +55,7 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 
 - [x] `smriti/ocr.py`: PaddleOCR wrapper, words + normalised boxes, engine string
 - [x] `smriti/classify.py`: local document-type classifier with confidence
+- [x] `smriti/metadata.py`: labelled collection/report dates; DOB skipped; user values preserved
 - [ ] `smriti/engines.py`: registry with versions
 - [ ] `eval/run_eval.py` skeleton + `eval/metrics.py` (F1, CER) on a 5-doc fixture
 - [ ] `tests/test_eval_smoke.py`: runs offline
@@ -77,10 +78,10 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 
 ## Week 6 — Review loop and first evaluation
 
-- [ ] `POST /api/observations/{id}/review` + audit rows
-- [ ] Review UI: field, crop, candidates, accept/correct/reject, keyboard path
-- [~] Upload UI + 2 s job polling (FR-JOB-04); authenticated upload/consent/page preview/polling/extracted fields done, review UI open
-- [ ] `tests/test_review.py`
+- [x] `POST /api/observations/{id}/review` + audit rows
+- [~] Review UI: field, source page, accept/correct/reject, keyboard path; printed-field review done, handwriting candidate flow open
+- [x] Upload UI + 2 s job polling (FR-JOB-04); authenticated upload/consent/page preview/polling/extracted fields/review navigation done
+- [x] `tests/test_review.py`
 - [ ] **M1 evaluation** on 40 docs: field F1, end-to-end, material errors
 - [ ] Medication F1 baseline; lexicon coverage reported (FR-MED-05)
 - [ ] **GATE** printed end-to-end measured; if < 0.85, apply RISK-05 before week 8
@@ -99,7 +100,7 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 
 - [ ] `smriti/normalize.py`: Decimal, unit map, glucose separation, mapping_rule
 - [ ] `tests/test_normalize.py`: 30 synonyms, unit round-trip, no fuzzy on printed
-- [ ] Source overlay: click value → page + box (FR-TIM-06)
+- [x] Source overlay: click value → live page + box (FR-TIM-06)
 - [ ] **Resolver experiment**: 40 docs with resolver off vs on, count review items
 - [ ] **Handwriting decision**: green only if printed end-to-end ≥ 0.85 **and** probe A survived **and** a clinician labeller exists
 - [ ] **GATE 1** normalisation ≥ 0.95
@@ -142,7 +143,7 @@ Current slice: PR-03a adds per-patient accounts and a partial P2 local extractio
 ## Week 13 — Usability and bug pass
 
 - [ ] 5–8 participant sessions: time-to-answer vs paper folder
-- [~] Keyboard-only and contrast audit (NFR-09); axe + summary/intake/auth pass done, review/clinician/share screens open
+- [~] Keyboard-only and contrast audit (NFR-09); axe + summary/intake/review/auth pass done, clinician/share screens open
 - [ ] Bug pass on the cut list
 - [ ] **GATE** usability data in hand
 

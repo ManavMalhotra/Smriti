@@ -41,6 +41,9 @@ export function statusLabel(status) {
       done: "Processed",
       failed: "Failed",
       rejected_quality: "Rejected",
+      review: "Review",
+      auto: "Accepted",
+      rejected: "Rejected",
     }[status] ?? status
   );
 }
