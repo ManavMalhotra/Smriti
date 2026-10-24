@@ -220,6 +220,11 @@ PR-03b is the review slice of P2. It does not implement table assembly, resolver
 - `ac9ce47` feat: add per-patient accounts and local extraction
 - Merge: `75faa50` (tag `patient-auth-ai`)
 
+### PR-03b commits
+
+- `b0be15d` feat: add document review MVP with local OCR dates and source overlay
+- Merge: pending
+
 ## Known limits at P2 partial
 
 - The P1 ethics pack, 20 real consented documents, and quality-gate precision check are still open. No extraction accuracy is claimed.
