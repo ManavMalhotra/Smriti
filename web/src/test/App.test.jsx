@@ -122,6 +122,40 @@ describe("App navigation", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
+
+  it("does not show empty dashboard panels while the first summary loads", async () => {
+    let resolveSummary;
+    const summaryPromise = new Promise((resolve) => {
+      resolveSummary = resolve;
+    });
+    const fetchMock = vi.fn((url) => {
+      if (url === "/api/auth/me") {
+        return Promise.resolve(
+          jsonResponse({ error: { code: "unauthorized", message: "Sign in." } }, 401),
+        );
+      }
+      if (url === "/api/auth/login") return Promise.resolve(jsonResponse(summary.patient));
+      if (url === `/api/patients/${summary.patient.id}/summary`) return summaryPromise;
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Sign in" });
+    await user.type(screen.getByLabelText("Username"), "patient-one");
+    await user.type(screen.getByLabelText("Password"), "test-password-123");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "P-01" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No results recorded.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No source documents.")).not.toBeInTheDocument();
+
+    resolveSummary(jsonResponse(summary));
+    expect(await screen.findByRole("heading", { name: "HbA1c" })).toBeInTheDocument();
+  });
 });
 
 describe("Dashboard shell", () => {
@@ -167,13 +201,15 @@ describe("Dashboard shell", () => {
       screen.getByRole("button", { name: /open source for hba1c/i }),
     );
 
-    const source = screen.getByRole("region", { name: "Source" });
+    const source = screen.getByRole("dialog", { name: "Source" });
     expect(within(source).getByText(/d-01/)).toBeInTheDocument();
     expect(within(source).getByText(/page 1/i)).toBeInTheDocument();
-    expect(within(source).getByText("0.61, 0.42, 0.78, 0.47")).toBeInTheDocument();
+    expect(
+      within(source).getByText(/highlighted region on the original page/i),
+    ).toBeInTheDocument();
 
-    await user.click(within(source).getByRole("button", { name: /close source/i }));
-    expect(screen.queryByRole("region", { name: "Source" })).not.toBeInTheDocument();
+    await user.click(within(source).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Source" })).not.toBeInTheDocument();
   });
 
   it("renders pending actions and source documents", () => {
@@ -183,5 +219,13 @@ describe("Dashboard shell", () => {
     expect(screen.getByText(/Review/)).toBeInTheDocument();
     expect(screen.getByText("Lab report")).toBeInTheDocument();
     expect(screen.getByText("Processed")).toBeInTheDocument();
+  });
+
+  it("does not flash empty panels while the summary loads", () => {
+    render(<Dashboard patient={summary.patient} loading />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading summary…");
+    expect(screen.queryByText("No results recorded.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No source documents.")).not.toBeInTheDocument();
   });
 });

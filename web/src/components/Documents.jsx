@@ -1,5 +1,5 @@
 import Panel from "./Panel";
-import { docTypeLabel, formatDate, statusLabel } from "../lib/format";
+import { docTypeLabel, formatDate, shortId, statusLabel } from "../lib/format";
 
 export default function Documents({ documents = [], onOpen }) {
   return (
@@ -16,7 +16,7 @@ export default function Documents({ documents = [], onOpen }) {
                 <th scope="col">Date</th>
                 <th scope="col">Pages</th>
                 <th scope="col">Status</th>
-                {onOpen ? <th scope="col">Review</th> : null}
+                {onOpen ? <th scope="col">Open</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -26,7 +26,7 @@ export default function Documents({ documents = [], onOpen }) {
                   <tr key={document.id}>
                     <td>
                       <span className="doc-type">{docTypeLabel(document.doc_type)}</span>
-                      <span className="doc-id">{document.id}</span>
+                      <span className="doc-id">#{shortId(document.id)}</span>
                     </td>
                     <td>{formatDate(document.doc_date ?? document.collection_date)}</td>
                     <td>{document.page_count}</td>

@@ -9,7 +9,7 @@ export default function App() {
   const [patient, setPatient] = useState(null);
   const [checking, setChecking] = useState(true);
   const [summaryData, setSummaryData] = useState(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState("");
   const [view, setView] = useState("summary");
   const [documentId, setDocumentId] = useState(null);
@@ -50,6 +50,7 @@ export default function App() {
         if (cancelled) return;
         if (err?.status === 401) {
           setPatient(null);
+          setSummaryData(null);
           return;
         }
         setSummaryError(err instanceof Error ? err.message : "Could not load the summary.");
@@ -83,12 +84,16 @@ export default function App() {
     }
     setPatient(null);
     setSummaryData(null);
+    setSummaryError("");
     setDocumentId(null);
     setView("summary");
   }
 
   function handleAuthenticated(data) {
     setPatient(data);
+    setSummaryData(null);
+    setSummaryLoading(true);
+    setSummaryError("");
     setDocumentId(null);
     setView("summary");
   }

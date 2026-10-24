@@ -46,6 +46,19 @@ describe("Results", () => {
     expect(screen.getByRole("img", { name: "Source page 1" })).toBeInTheDocument();
   });
 
+  it("closes the source dialog with Escape", async () => {
+    const user = userEvent.setup();
+    render(<Results results={[result]} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /open source for hba1c/i }),
+    );
+    expect(screen.getByRole("dialog", { name: "Source" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Source" })).not.toBeInTheDocument();
+  });
+
   it("surfaces excluded readings with their source document", () => {
     render(<Results results={[result]} />);
 

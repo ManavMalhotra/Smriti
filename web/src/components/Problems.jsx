@@ -1,4 +1,5 @@
 import Panel from "./Panel";
+import { shortId } from "../lib/format";
 
 export default function Problems({ problems = [] }) {
   return (
@@ -11,7 +12,7 @@ export default function Problems({ problems = [] }) {
             <li key={problem.id}>
               <p className="item-title">{problem.condition_text ?? "Problem"}</p>
               {problem.source_doc_id ? (
-                <p className="item-source">Source {problem.source_doc_id}</p>
+                <p className="item-source">Source #{shortId(problem.source_doc_id)}</p>
               ) : null}
             </li>
           ))}
