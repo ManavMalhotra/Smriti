@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from typing import Literal
 
@@ -14,6 +15,8 @@ from api.errors import api_error
 from smriti.auth import current_patient, owned_document, require_same_patient
 from smriti.ingest import IngestError, ingest_upload, record_consent
 from smriti.models import ConsentCreate, DocType
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -97,6 +100,13 @@ def upload_document(
             },
         )
 
+    logger.info(
+        "Upload accepted for patient %s: document %s (%d pages, job %s)",
+        patient_id,
+        result.document_id,
+        result.pages,
+        result.job_id,
+    )
     return {
         "document_id": result.document_id,
         "job_id": result.job_id,

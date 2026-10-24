@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -22,6 +23,8 @@ from sqlalchemy.exc import IntegrityError
 from smriti import handwriting, quality
 from smriti.config import Settings
 from smriti.preprocess import normalise_page, to_bgr
+
+logger = logging.getLogger(__name__)
 
 PDF_DPI = 300
 
@@ -375,8 +378,19 @@ def ingest_upload(
             previous_hashes.append(page_hash)
             prepared.append((page_number, page_bgr, steps, page_hash))
 
+        handwritten_count = capture_types.count("handwritten")
         capture_type = (
-            "handwritten" if "handwritten" in capture_types else "printed"
+            "handwritten"
+            if handwritten_count > len(capture_types) / 2
+            else "printed"
+        )
+        logger.info(
+            "Ingest document %s: %d page(s) (%d printed, %d handwritten) => capture_type='%s'",
+            document_id,
+            len(images),
+            capture_types.count("printed"),
+            handwritten_count,
+            capture_type,
         )
 
         if failure is not None:
@@ -471,6 +485,13 @@ def ingest_upload(
             raise IngestError(
                 "ingest_failed", "Could not queue the document."
             ) from exc
+
+        logger.info(
+            "Ingest complete: document %s queued as job %s (%d pages ready for OCR)",
+            document_id,
+            job_id,
+            len(prepared),
+        )
 
         return IngestResult(
             document_id=document_id,

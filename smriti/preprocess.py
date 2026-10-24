@@ -13,6 +13,7 @@ PIPELINE: tuple[str, ...] = (
     "deskew",
     "clahe",
     "upscale",
+    "downscale",
 )
 
 
@@ -148,7 +149,20 @@ def upscale(bgr: np.ndarray, min_long_edge: int = 1500) -> np.ndarray:
     )
 
 
-def normalise_page(image: Image.Image, upscale_long_edge: int = 1500) -> tuple[np.ndarray, list[str]]:
+def downscale(bgr: np.ndarray, max_long_edge: int = 1800) -> np.ndarray:
+    height, width = bgr.shape[:2]
+    long_edge = max(height, width)
+    if long_edge <= max_long_edge:
+        return bgr
+    scale = max_long_edge / long_edge
+    return cv2.resize(
+        bgr,
+        (max(1, int(width * scale)), max(1, int(height * scale))),
+        interpolation=cv2.INTER_AREA,
+    )
+
+
+def normalise_page(image: Image.Image, upscale_long_edge: int = 1500, max_long_edge: int = 1800) -> tuple[np.ndarray, list[str]]:
     orientation = image.getexif().get(0x0112)
     rotated = bool(image.info.pop("smriti_exif_rotated", False))
     image = ImageOps.exif_transpose(image)
@@ -174,5 +188,8 @@ def normalise_page(image: Image.Image, upscale_long_edge: int = 1500) -> tuple[n
     if max(bgr.shape[:2]) < upscale_long_edge:
         bgr = upscale(bgr, upscale_long_edge)
         steps.append("upscale")
+    elif max(bgr.shape[:2]) > max_long_edge:
+        bgr = downscale(bgr, max_long_edge)
+        steps.append("downscale")
 
     return bgr, steps

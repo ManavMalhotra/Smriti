@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -17,6 +18,11 @@ from smriti.worker import start_worker
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     settings = settings or load_settings()
     dist = (BASE_DIR / "web" / "dist").resolve()
     if settings.upload_dir.resolve().is_relative_to(dist):
@@ -66,6 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(jobs.router, prefix="/api")
     app.include_router(review.router, prefix="/api")
 
+    @app.get("/health")
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "profile": settings.profile}
