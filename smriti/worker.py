@@ -17,9 +17,10 @@ from smriti import engines, text_layer
 from smriti.classify import classify_text
 from smriti.config import Settings
 from smriti.directives import extract_directives
-from smriti.extract import extract_document, words_to_text
+from smriti.extract import ExtractedField, extract_document, words_to_text
 from smriti.metadata import extract_document_dates, extract_metadata
 from smriti.ocr import OcrWord, get_ocr_engine
+from smriti.prose import extract_prose_with_grounding
 from smriti.stage import (
     load_cached_ocr_words,
     release_gpu_memory,
@@ -385,6 +386,43 @@ def process_job(
     extraction = extract_document(
         pages, doc_type, capture_type, engine=engines.field_engine(field_engine)
     )
+
+    # Grounded prose extraction for narrative, imaging, and discharge documents
+    prose_sections = []
+    if doc_type in (
+        "ct",
+        "mri",
+        "xray",
+        "pathology",
+        "discharge_summary",
+        "radiology",
+        "other",
+    ):
+        prose_sections = extract_prose_with_grounding(
+            combined_text,
+            page=1,
+            words=pages[0] if pages else [],
+        )
+    for section in prose_sections:
+        extraction.fields.append(
+            ExtractedField(
+                analyte_id=None,
+                label_raw=section.title,
+                value_num=None,
+                value_text=section.text,
+                unit_raw=None,
+                ref_low=None,
+                ref_high=None,
+                flag_printed=None,
+                bbox=section.bbox,
+                page=section.page,
+                confidence=round(section.grounding_score, 2),
+                mapping_rule="unresolved",
+                engine=engines.field_engine(field_engine),
+                reason=f"Grounded prose extraction (grounding score: {section.grounding_score:.2f}); review required.",
+            )
+        )
+
     metadata = extract_metadata(combined_text)
     # Handwritten content is never auto-accepted, including follow-up advice.
     directives = (
@@ -398,9 +436,10 @@ def process_job(
         else []
     )
     logger.info(
-        "[worker] Job %s: extracted %d observation(s), %d medication(s), %d directive(s) (metadata=%s)",
+        "[worker] Job %s: extracted %d observation(s) (%d prose), %d medication(s), %d directive(s) (metadata=%s)",
         job["id"],
         len(extraction.fields),
+        len(prose_sections),
         len(extraction.medications),
         len(directives),
         metadata,
@@ -410,6 +449,25 @@ def process_job(
         _insert_extraction(
             conn, document_id, patient_id, extraction, directives, now, provenance
         )
+        if prose_sections:
+            save_stage_artifact(
+                conn,
+                content_hash,
+                1,
+                "prose",
+                "grounded_prose@1.0",
+                [
+                    {
+                        "section": s.section_name,
+                        "title": s.title,
+                        "text": s.text,
+                        "bbox": s.bbox,
+                        "grounding_score": s.grounding_score,
+                        "is_grounded": s.is_grounded,
+                    }
+                    for s in prose_sections
+                ],
+            )
         conn.execute(
             text(
                 """

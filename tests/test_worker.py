@@ -43,6 +43,22 @@ class _FailingOcr:
         raise OcrUnavailable("OCR model is missing")
 
 
+class _CtOcr:
+    name = "ct-ocr"
+
+    def read(self, _path):
+        return [
+            OcrWord("CT CHEST WITH IV CONTRAST", [0.1, 0.05, 0.8, 0.09], 0.99),
+            OcrWord("Computed tomography of the thorax.", [0.1, 0.10, 0.8, 0.14], 0.99),
+            OcrWord("Findings: Both lungs show normal aeration.", [0.1, 0.20, 0.8, 0.24], 0.98),
+            OcrWord(
+                "Impression: Normal CT scan of chest. No acute abnormality.",
+                [0.1, 0.35, 0.8, 0.39],
+                0.98,
+            ),
+        ]
+
+
 def _upload_without_type(client, patient_id):
     return client.post(
         "/api/documents",
@@ -243,3 +259,29 @@ def test_stage_artifacts_cached_and_reused_on_resume(client, app, settings):
 
     detail = client.get(f"/api/documents/{doc_id}").json()
     assert detail["status"] == "done"
+
+
+def test_worker_extracts_prose_sections_from_imaging_report(client, app, settings):
+    patient_id = make_patient(client, alias="P-01")
+    response = upload(
+        client,
+        patient_id,
+        scanned_pdf_bytes(),
+        filename="ct_report.pdf",
+        content_type="application/pdf",
+    )
+    assert response.status_code == 202
+    body = response.json()
+
+    assert process_next(app.state.engine, settings, ocr_engine=_CtOcr()) is True
+
+    detail = client.get(f"/api/documents/{body['document_id']}").json()
+    assert detail["status"] == "done"
+    assert detail["doc_type"] == "ct"
+
+    labels = {obs["label_raw"]: obs for obs in detail["observations"]}
+    assert "Impression" in labels
+    assert "Normal CT scan of chest" in labels["Impression"]["value_text"]
+    assert "Grounded prose extraction" in labels["Impression"]["reason"]
+    assert labels["Impression"]["value_num"] is None
+    assert labels["Impression"]["status"] == "review"
