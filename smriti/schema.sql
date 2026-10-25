@@ -152,10 +152,21 @@ CREATE TABLE jobs (
     id           TEXT PRIMARY KEY,
     document_id  TEXT NOT NULL REFERENCES document(id) ON DELETE CASCADE,
     state        TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
+    stage        TEXT NOT NULL DEFAULT 'stage_ocr',
     page         INTEGER NOT NULL DEFAULT 0 CHECK (page >= 0),
     total        INTEGER NOT NULL CHECK (total >= 1),
     error        TEXT,
     ts           TEXT NOT NULL
+);
+
+CREATE TABLE stage_artifact (
+    content_hash  TEXT NOT NULL,
+    page          INTEGER NOT NULL CHECK (page >= 1),
+    stage         TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    artifact_json TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (content_hash, page, stage, model_version)
 );
 
 CREATE TABLE share_token (
@@ -198,6 +209,7 @@ CREATE INDEX idx_med_patient      ON medication(patient_id, status);
 CREATE INDEX idx_hwf_doc_status   ON handwriting_field(document_id, status);
 CREATE INDEX idx_egress_doc       ON egress(document_id, ts);
 CREATE INDEX idx_jobs_state       ON jobs(state, ts);
+CREATE INDEX idx_stage_artifact_lookup ON stage_artifact(content_hash, page, stage);
 CREATE INDEX idx_share_patient    ON share_token(patient_id, expires_at);
 CREATE UNIQUE INDEX idx_patient_username ON patient(username COLLATE NOCASE)
     WHERE username IS NOT NULL;
@@ -249,6 +261,6 @@ BEGIN
     SELECT RAISE(ABORT, 'SI-02: no numeric laboratory value from a handwritten document');
 END;
 
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 
 COMMIT;

@@ -20,6 +20,11 @@ from smriti.directives import extract_directives
 from smriti.extract import extract_document, words_to_text
 from smriti.metadata import extract_document_dates, extract_metadata
 from smriti.ocr import OcrWord, get_ocr_engine
+from smriti.stage import (
+    load_cached_ocr_words,
+    release_gpu_memory,
+    save_stage_artifact,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +236,7 @@ def process_job(
         document = conn.execute(
             text(
                 """
-                SELECT patient_id, image_path, capture_type, page_count
+                SELECT patient_id, image_path, capture_type, page_count, content_hash
                 FROM document WHERE id = :id
                 """
             ),
@@ -239,7 +244,7 @@ def process_job(
         ).first()
     if document is None:
         raise RuntimeError(f"Unknown document {document_id}.")
-    patient_id, image_path, capture_type, page_count = document
+    patient_id, image_path, capture_type, page_count, content_hash = document
     engine_ocr = ocr_engine or get_ocr_engine(
         settings.ocr_det_model, settings.ocr_rec_model
     )
@@ -264,12 +269,32 @@ def process_job(
         page_path = _page_path(settings, image_path, page)
         cached = text_layer.words_path(page_path)
         t_page = time.time()
-        if cached.is_file():
+
+        with engine.connect() as conn:
+            cached_words = load_cached_ocr_words(conn, content_hash, page)
+
+        if cached_words is not None:
+            words = cached_words
+            page_engine = "stage_artifact"
+            page_source = "text_layer" if cached.is_file() else "ocr"
+            page_model = text_layer.MODEL_VERSION if cached.is_file() else engine_name
+            if page_source == "text_layer":
+                text_layer_pages += 1
+            logger.info(
+                "[worker] Job %s: page %d/%d loaded from stage_artifact cache (%d words)",
+                job["id"],
+                page,
+                page_count,
+                len(words),
+            )
+        elif cached.is_file():
             words = text_layer.load_words(cached)
             page_engine = "text_layer"
             page_source = "text_layer"
             page_model = text_layer.MODEL_VERSION
             text_layer_pages += 1
+            with engine.begin() as conn:
+                save_stage_artifact(conn, content_hash, page, "ocr", page_model, words)
             logger.info(
                 "[worker] Job %s: page %d/%d read from the PDF text layer (%d words)",
                 job["id"],
@@ -288,6 +313,8 @@ def process_job(
             page_engine = engine_name
             page_source = "ocr"
             page_model = engine_name
+            with engine.begin() as conn:
+                save_stage_artifact(conn, content_hash, page, "ocr", page_model, words)
             logger.info(
                 "[worker] Job %s: page %d/%d OCR complete in %.1fs (%d words detected)",
                 job["id"],
@@ -332,6 +359,14 @@ def process_job(
                 text("UPDATE jobs SET page = :page WHERE id = :id"),
                 {"page": page, "id": job["id"]},
             )
+
+    # Release GPU memory after the OCR stage finishes and advance stage
+    release_gpu_memory()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE jobs SET stage = 'stage_extract' WHERE id = :id"),
+            {"id": job["id"]},
+        )
 
     combined_text = "\n".join(texts)
     classification = classify_text(combined_text)
@@ -408,7 +443,7 @@ def process_job(
         )
         conn.execute(
             text(
-                "UPDATE jobs SET state = 'done', page = total, error = NULL WHERE id = :id"
+                "UPDATE jobs SET state = 'done', stage = 'done', page = total, error = NULL WHERE id = :id"
             ),
             {"id": job["id"]},
         )

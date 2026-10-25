@@ -24,6 +24,7 @@ EXPECTED_TABLES = {
     "share_token",
     "auth_session",
     "page_text",
+    "stage_artifact",
 }
 
 
@@ -83,7 +84,7 @@ def test_schema_creates_all_tables(app):
             )
         }
         assert EXPECTED_TABLES <= names
-        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 4
+        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 5
         assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
 
 
@@ -221,6 +222,15 @@ CREATE TABLE page_text (
     created_at TEXT NOT NULL,
     PRIMARY KEY (document_id, page)
 );
+CREATE TABLE jobs (
+    id           TEXT PRIMARY KEY,
+    document_id  TEXT NOT NULL REFERENCES document(id) ON DELETE CASCADE,
+    state        TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
+    page         INTEGER NOT NULL DEFAULT 0 CHECK (page >= 0),
+    total        INTEGER NOT NULL CHECK (total >= 1),
+    error        TEXT,
+    ts           TEXT NOT NULL
+);
 CREATE INDEX idx_doc_patient_date ON document(patient_id, collection_date);
 CREATE INDEX idx_doc_status ON document(status);
 PRAGMA user_version = 2;
@@ -254,10 +264,11 @@ def test_v2_database_migrates_to_latest(tmp_path):
 
     conn = sqlite3.connect(path)
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
         assert conn.execute("SELECT doc_type FROM document").fetchone()[0] == "lab_report"
         assert conn.execute("SELECT COUNT(*) FROM observation").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM page_text").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM stage_artifact").fetchone()[0] == 0
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
         doc_columns = {row[1] for row in conn.execute("PRAGMA table_info(document)")}

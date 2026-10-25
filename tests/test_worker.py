@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from smriti.ocr import OcrUnavailable, OcrWord
 from smriti.worker import process_next
@@ -190,3 +191,55 @@ def test_scanned_pdf_falls_back_to_ocr(client, app, settings):
     assert {page["engine"] for page in detail["page_text"]} == {"fake-ocr"}
     assert {page["source"] for page in detail["page_text"]} == {"ocr"}
     assert {page["model_version"] for page in detail["page_text"]} == {"fake-ocr"}
+
+
+def test_stage_artifacts_cached_and_reused_on_resume(client, app, settings):
+    patient_id = make_patient(client, alias="P-01")
+    response = upload(
+        client,
+        patient_id,
+        scanned_pdf_bytes(),
+        filename="scan_stage.pdf",
+        content_type="application/pdf",
+    )
+    assert response.status_code == 202
+    body = response.json()
+    job_id = body["job_id"]
+    doc_id = body["document_id"]
+
+    # Initial processing with OCR
+    assert process_next(app.state.engine, settings, ocr_engine=_FakeOcr()) is True
+
+    # Verify stage_artifact rows created in SQLite
+    with app.state.engine.connect() as conn:
+        doc = conn.execute(
+            text("SELECT content_hash FROM document WHERE id = :id"), {"id": doc_id}
+        ).first()
+        content_hash = doc[0]
+        artifacts = conn.execute(
+            text(
+                "SELECT page, stage, model_version FROM stage_artifact WHERE content_hash = :hash"
+            ),
+            {"hash": content_hash},
+        ).all()
+        assert len(artifacts) >= 1
+        assert artifacts[0][1] == "ocr"
+
+        job = conn.execute(
+            text("SELECT state, stage FROM jobs WHERE id = :id"), {"id": job_id}
+        ).first()
+        assert job[0] == "done"
+        assert job[1] == "done"
+
+    # Reset job to queued to simulate a resume/re-run
+    with app.state.engine.begin() as conn:
+        conn.execute(
+            text("UPDATE jobs SET state = 'queued', stage = 'stage_ocr' WHERE id = :id"),
+            {"id": job_id},
+        )
+
+    # Process again with _NeverCalledOcr() - proves OCR is completely bypassed via stage_artifact cache!
+    assert process_next(app.state.engine, settings, ocr_engine=_NeverCalledOcr()) is True
+
+    detail = client.get(f"/api/documents/{doc_id}").json()
+    assert detail["status"] == "done"
