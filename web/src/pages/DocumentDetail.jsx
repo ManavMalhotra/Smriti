@@ -247,7 +247,7 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
                         <tr key={observation.id}>
                           <td className="field-cell" data-label="Field">
                             <span className="doc-type">{fieldLabel(observation)}</span>
-                            {!observation.analyte_id ? (
+                            {!observation.analyte_id && observation.value_num != null ? (
                               <span className="doc-id">
                                 Not linked to a standard test; reject only.
                               </span>
@@ -315,10 +315,11 @@ export default function DocumentDetail({ documentId, patient, onBack, onSignOut,
                                     className="button-secondary"
                                     onClick={() => review(observation, { action: "accept" })}
                                     disabled={
-                                      savingId === observation.id || !observation.analyte_id
+                                      savingId === observation.id ||
+                                      (!observation.analyte_id && observation.value_num != null)
                                     }
                                     title={
-                                      observation.analyte_id
+                                      observation.analyte_id || observation.value_num == null
                                         ? undefined
                                         : "Map this field before accepting it."
                                     }

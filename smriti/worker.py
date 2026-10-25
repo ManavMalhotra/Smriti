@@ -58,7 +58,18 @@ def recover_orphaned_jobs(engine: Engine) -> int:
                     """
                 )
             )
-        return count
+        # Mark any documents stranded in 'processing' without a job as 'failed'
+        stranded = conn.execute(
+            text(
+                """
+                UPDATE document
+                SET status = 'failed'
+                WHERE status = 'processing'
+                  AND id NOT IN (SELECT document_id FROM jobs)
+                """
+            )
+        )
+        return count + stranded.rowcount
 
 
 def claim_job(engine: Engine) -> dict | None:
@@ -398,11 +409,13 @@ def process_job(
         "radiology",
         "other",
     ):
-        prose_sections = extract_prose_with_grounding(
-            combined_text,
-            page=1,
-            words=pages[0] if pages else [],
-        )
+        for page_idx, (page_words, page_text) in enumerate(zip(pages, texts), start=1):
+            sections = extract_prose_with_grounding(
+                page_text,
+                page=page_idx,
+                words=page_words,
+            )
+            prose_sections.extend(sections)
     for section in prose_sections:
         extraction.fields.append(
             ExtractedField(
@@ -449,24 +462,21 @@ def process_job(
         _insert_extraction(
             conn, document_id, patient_id, extraction, directives, now, provenance
         )
-        if prose_sections:
+        for s in prose_sections:
             save_stage_artifact(
                 conn,
                 content_hash,
-                1,
+                s.page,
                 "prose",
                 "grounded_prose@1.0",
-                [
-                    {
-                        "section": s.section_name,
-                        "title": s.title,
-                        "text": s.text,
-                        "bbox": s.bbox,
-                        "grounding_score": s.grounding_score,
-                        "is_grounded": s.is_grounded,
-                    }
-                    for s in prose_sections
-                ],
+                {
+                    "section": s.section_name,
+                    "title": s.title,
+                    "text": s.text,
+                    "bbox": s.bbox,
+                    "grounding_score": s.grounding_score,
+                    "is_grounded": s.is_grounded,
+                },
             )
         conn.execute(
             text(

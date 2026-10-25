@@ -75,7 +75,7 @@ CREATE TABLE observation (
     source        TEXT CHECK (source IN ('text_layer', 'ocr')),
     model_version TEXT,
     created_at    TEXT NOT NULL,
-    CHECK (status <> 'auto' OR (analyte_id IS NOT NULL AND value_num IS NOT NULL))
+    CHECK (status <> 'auto' OR (analyte_id IS NOT NULL AND value_num IS NOT NULL) OR value_text IS NOT NULL)
 );
 
 CREATE TABLE directive (
@@ -214,6 +214,7 @@ CREATE INDEX idx_share_patient    ON share_token(patient_id, expires_at);
 CREATE UNIQUE INDEX idx_patient_username ON patient(username COLLATE NOCASE)
     WHERE username IS NOT NULL;
 CREATE INDEX idx_auth_session_patient ON auth_session(patient_id, expires_at);
+CREATE INDEX idx_audit_lookup ON audit(entity, entity_id, field, ts);
 
 CREATE TRIGGER audit_no_update
 BEFORE UPDATE ON audit
@@ -261,6 +262,6 @@ BEGIN
     SELECT RAISE(ABORT, 'SI-02: no numeric laboratory value from a handwritten document');
 END;
 
-PRAGMA user_version = 5;
+PRAGMA user_version = 6;
 
 COMMIT;

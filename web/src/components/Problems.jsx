@@ -10,7 +10,7 @@ export default function Problems({ problems = [] }) {
         <ul className="list">
           {problems.map((problem) => (
             <li key={problem.id}>
-              <p className="item-title">{problem.condition_text ?? "Problem"}</p>
+              <p className="item-title">{problem.label ?? problem.condition_text ?? "Problem"}</p>
               {problem.source_doc_id ? (
                 <p className="item-source">Source #{shortId(problem.source_doc_id)}</p>
               ) : null}

@@ -63,6 +63,7 @@ def test_extract_facility_name():
 
 def test_extracts_iso_and_month_name_dates():
     assert extract_document_dates("Report Date: 2025-11-02")["doc_date"] == "2025-11-02"
+    assert extract_document_dates("Report Date: 2025/11/02")["doc_date"] == "2025-11-02"
     assert extract_document_dates("Date: 2 Nov 2025")["doc_date"] == "2025-11-02"
 
 

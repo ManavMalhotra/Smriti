@@ -22,9 +22,9 @@ _UNIT = re.compile(
     r"ng/mL|pg/mL|µIU/mL|mIU/mL|mm/hr)",
     re.IGNORECASE,
 )
-_NUMBER = re.compile(r"(?<![A-Za-z0-9.-])([<>]?)\s*(-?\d+(?:\.\d+)?)")
+_NUMBER = re.compile(r"(?<![A-Za-z0-9.-])([<>]?)\s*(-?\d+(?:,\d+)*(?:\.\d+)?)")
 _RANGE = re.compile(
-    r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)"
+    r"(?<![\d.])(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:,\d+)*(?:\.\d+)?)"
 )
 _FLAG = re.compile(r"\b(high|low|h|l|abnormal)\b", re.IGNORECASE)
 _MED_FREQ = (
@@ -110,7 +110,7 @@ class Extraction:
 
 
 def _canonical_number(value: str) -> str:
-    return f"{float(value):g}"
+    return f"{float(value.replace(',', '')):g}"
 
 
 def _line_groups(words: list[OcrWord]) -> list[list[OcrWord]]:
@@ -185,8 +185,10 @@ def _printed_flag(text: str) -> str | None:
 
 
 def _bbox_for_value(words: list[OcrWord], value: str) -> list[float]:
+    clean_val = value.replace(",", "")
     for word in words:
-        if value in word.text or value.replace(".", "") in word.text.replace(".", ""):
+        clean_word = word.text.replace(",", "")
+        if clean_val in clean_word or clean_val.replace(".", "") in clean_word.replace(".", ""):
             return word.bbox
     return _line_bbox(words)
 

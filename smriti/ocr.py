@@ -155,9 +155,3 @@ def get_ocr_engine(det_model: str, rec_model: str) -> PaddleOcrEngine:
             if _ENGINE is None:
                 _ENGINE = PaddleOcrEngine(det_model, rec_model)
     return _ENGINE
-
-
-def reset_ocr_engine() -> None:
-    global _ENGINE
-    with _ENGINE_LOCK:
-        _ENGINE = None

@@ -77,6 +77,10 @@ def create_session(conn: Connection, patient_id: str, ttl_days: int) -> str:
     token = secrets.token_urlsafe(32)
     now = _now()
     conn.execute(
+        text("DELETE FROM auth_session WHERE expires_at <= :now"),
+        {"now": _iso(now)},
+    )
+    conn.execute(
         text(
             """
             INSERT INTO auth_session (id, patient_id, token_hash, created_at, expires_at)

@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from api.errors import api_error
 from smriti.auth import (
+    _DUMMY_HASH,
     SESSION_COOKIE,
     audit,
     create_session,
@@ -181,7 +182,11 @@ def login(payload: LoginRequest, request: Request, response: Response) -> Patien
     if failures >= settings.login_attempts:
         api_error(429, "too_many_attempts", "Too many sign-in attempts. Try again shortly.")
 
-    if row is None or not verify_password(payload.password, row._mapping["password_hash"]):
+    valid = verify_password(
+        payload.password,
+        row._mapping["password_hash"] if row is not None else _DUMMY_HASH,
+    )
+    if row is None or not valid:
         with request.app.state.engine.begin() as conn:
             audit(
                 conn,

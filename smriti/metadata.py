@@ -31,7 +31,7 @@ _MONTHS = {
     "dec": 12,
     "december": 12,
 }
-_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_ISO = re.compile(r"\b(\d{4})[/-](\d{2})[/-](\d{2})\b")
 _NUMERIC = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b")
 _WORDS = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b")
 _SKIP = re.compile(r"\b(?:dob|date\s+of\s+birth|birth)\b", re.IGNORECASE)

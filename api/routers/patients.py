@@ -46,13 +46,17 @@ def delete_patient(
 
     engine = request.app.state.engine
     with engine.begin() as conn:
-        image_paths = [
-            row[0]
-            for row in conn.execute(
-                text("SELECT image_path FROM document WHERE patient_id = :id"),
-                {"id": patient_id},
+        docs = conn.execute(
+            text("SELECT image_path, content_hash FROM document WHERE patient_id = :id"),
+            {"id": patient_id},
+        ).all()
+        image_paths = [row[0] for row in docs]
+        content_hashes = [row[1] for row in docs]
+        for hash_val in content_hashes:
+            conn.execute(
+                text("DELETE FROM stage_artifact WHERE content_hash = :hash"),
+                {"hash": hash_val},
             )
-        ]
         conn.execute(text("DELETE FROM patient WHERE id = :id"), {"id": patient_id})
         audit(
             conn,

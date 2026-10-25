@@ -112,16 +112,16 @@ def review_observation(
         unit_norm = old_unit
 
         if payload.action == "accept":
-            if mapping["analyte_id"] is None:
+            if mapping["value_num"] is not None and mapping["analyte_id"] is None:
                 api_error(409, "unmapped", "Map this field before accepting it.")
-            if old_value is None:
-                api_error(409, "missing_value", "This field has no numeric value.")
+            if mapping["value_num"] is None and mapping["value_text"] is None:
+                api_error(409, "missing_value", "This field has no value.")
             status = "auto"
             reason = "Accepted during review."
             if payload.unit_norm:
                 unit_norm = payload.unit_norm.strip()
         elif payload.action == "correct":
-            if mapping["analyte_id"] is None:
+            if mapping["value_num"] is not None and mapping["analyte_id"] is None:
                 api_error(409, "unmapped", "Map this field before correcting it.")
             if payload.value_num is None:
                 api_error(400, "validation_error", "A corrected value is required.", field="value_num")

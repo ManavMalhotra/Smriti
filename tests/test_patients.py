@@ -140,6 +140,16 @@ def test_delete_patient_erases_rows_and_files(client, app, settings):
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                INSERT INTO stage_artifact
+                    (content_hash, page, stage, model_version, artifact_json, created_at)
+                VALUES
+                    ('hash-d1', 1, 'ocr', 'test@1.0', '[]', '2026-10-23T00:00:00Z')
+                """
+            )
+        )
 
     response = client.delete(f"/api/patients/{patient_id}")
     assert response.status_code == 204
@@ -147,6 +157,7 @@ def test_delete_patient_erases_rows_and_files(client, app, settings):
     assert _count(app, "patient") == 0
     assert _count(app, "document") == 0
     assert _count(app, "observation") == 0
+    assert _count(app, "stage_artifact") == 0
 
     with app.state.engine.connect() as conn:
         deleted = conn.execute(

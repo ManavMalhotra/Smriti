@@ -84,7 +84,7 @@ def test_schema_creates_all_tables(app):
             )
         }
         assert EXPECTED_TABLES <= names
-        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 5
+        assert conn.exec_driver_sql("PRAGMA user_version").scalar_one() == 6
         assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
 
 
@@ -165,6 +165,30 @@ def test_handwritten_numeric_value_is_rejected(app):
     with pytest.raises(IntegrityError, match="SI-02"):
         with app.state.engine.begin() as conn:
             _insert_observation(conn, status="review", value_num="13.2")
+
+
+def test_prose_observation_can_be_auto(app):
+    with app.state.engine.begin() as conn:
+        _insert_patient(conn)
+        _insert_document(conn, capture_type="printed")
+        conn.execute(
+            text(
+                """
+                INSERT INTO observation
+                    (id, document_id, analyte_id, label_raw, value_num, value_text,
+                     bbox_json, page, engine, status, created_at)
+                VALUES
+                    ('o-prose', 'd1', NULL, 'Impression', NULL, 'No acute abnormality.',
+                     '[0.1,0.2,0.3,0.4]', 1, 'test', 'auto', '2026-10-23T00:00:00Z')
+                """
+            )
+        )
+    with app.state.engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT status, value_text FROM observation WHERE id = 'o-prose'")
+        ).first()
+    assert row[0] == "auto"
+    assert row[1] == "No acute abnormality."
 
 
 _V2_SCHEMA = """
@@ -264,7 +288,7 @@ def test_v2_database_migrates_to_latest(tmp_path):
 
     conn = sqlite3.connect(path)
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
         assert conn.execute("SELECT doc_type FROM document").fetchone()[0] == "lab_report"
         assert conn.execute("SELECT COUNT(*) FROM observation").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM page_text").fetchone()[0] == 1

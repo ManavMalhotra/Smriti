@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Iterator
 
-from fastapi import Request
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import Engine
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 MIGRATIONS_PATH = Path(__file__).with_name("migrations")
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def _migration_path(version: int) -> Path:
@@ -64,11 +62,7 @@ def create_db_engine(db_path: str | Path) -> Engine:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
     return engine
-
-
-def get_connection(request: Request) -> Iterator[Connection]:
-    with request.app.state.engine.begin() as conn:
-        yield conn

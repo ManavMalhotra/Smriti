@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from smriti.ocr import OcrUnavailable, OcrWord
-from smriti.worker import process_next
+from smriti.worker import process_next, recover_orphaned_jobs
 from tests.factory import (
     jpeg_bytes,
     make_patient,
@@ -285,3 +285,34 @@ def test_worker_extracts_prose_sections_from_imaging_report(client, app, setting
     assert "Grounded prose extraction" in labels["Impression"]["reason"]
     assert labels["Impression"]["value_num"] is None
     assert labels["Impression"]["status"] == "review"
+
+
+def test_recover_orphaned_jobs_cleans_stranded_documents(app):
+    with app.state.engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO patient (id, alias, created_at)
+                VALUES ('p-stranded', 'Stranded', '2026-10-25T00:00:00Z')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO document
+                    (id, patient_id, doc_type, capture_type, image_path,
+                     page_count, content_hash, status, created_at)
+                VALUES
+                    ('d-stranded', 'p-stranded', 'lab_report', 'printed', 'img-str',
+                     1, 'hash-stranded', 'processing', '2026-10-25T00:00:00Z')
+                """
+            )
+        )
+    recovered = recover_orphaned_jobs(app.state.engine)
+    assert recovered >= 1
+    with app.state.engine.connect() as conn:
+        status = conn.execute(
+            text("SELECT status FROM document WHERE id = 'd-stranded'")
+        ).scalar_one()
+    assert status == "failed"

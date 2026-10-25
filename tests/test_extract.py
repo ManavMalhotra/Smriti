@@ -194,6 +194,22 @@ def test_extract_known_lab_rows():
     assert all(field.mapping_rule in ("exact", "synonym") for field in extraction.fields)
 
 
+def test_extract_comma_formatted_numbers():
+    words = [
+        _word("Platelet Count", 0.10, x=0.10, width=0.25),
+        _word("250,000", 0.10, x=0.45, width=0.10),
+        _word("cells/µL", 0.10, x=0.60, width=0.08),
+        _word("150,000 - 450,000", 0.10, x=0.72, width=0.20),
+    ]
+    extraction = extract_document([words], "lab_report", "printed")
+    by_id = {field.analyte_id: field for field in extraction.fields}
+    assert "platelets" in by_id
+    field = by_id["platelets"]
+    assert field.value_num == "250000"
+    assert field.ref_low == "150000"
+    assert field.ref_high == "450000"
+
+
 def test_extract_unknown_label_stays_unresolved():
     extraction = extract_document(
         [[_word("Some assay", 0.1), _word("42", 0.1, x=0.6, width=0.05)]],

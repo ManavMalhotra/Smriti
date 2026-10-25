@@ -155,3 +155,44 @@ def test_review_is_scoped_to_the_owning_patient(app, settings):
             json={"action": "accept"},
         )
         assert response.status_code == 404
+
+
+def test_accept_prose_observation(client, app):
+    patient_id = make_patient(client, alias="P-01")
+    with app.state.engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO document
+                    (id, patient_id, doc_type, capture_type, image_path,
+                     page_count, content_hash, status, created_at)
+                VALUES
+                    ('d-ct', :patient_id, 'ct', 'printed', 'img-ct',
+                     1, 'hash-ct', 'done', '2026-10-25T00:00:00Z')
+                """
+            ),
+            {"patient_id": patient_id},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO observation
+                    (id, document_id, analyte_id, label_raw, value_num, value_text,
+                     bbox_json, page, engine, status, reason, created_at)
+                VALUES
+                    ('o-ct', 'd-ct', NULL, 'Impression', NULL, 'Normal CT brain.',
+                     '[0.1,0.2,0.3,0.4]', 1, 'test', 'review', 'Grounded prose',
+                     '2026-10-25T00:00:00Z')
+                """
+            )
+        )
+
+    response = client.post(
+        "/api/observations/o-ct/review",
+        json={"action": "accept"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["observation"]["status"] == "auto"
+    assert body["observation"]["value_text"] == "Normal CT brain."
+    assert body["observation"]["reason"] == "Accepted during review."

@@ -46,6 +46,7 @@ def _parse_float(value: Any) -> float | None:
 
 
 def _doc_date(row: Any) -> date | None:
+    # shortcut: undated documents fall back to created_at; upgrade to require date entry if undated scans cluster.
     return (
         _parse_date(row["collection_date"])
         or _parse_date(row.get("registration_date"))
