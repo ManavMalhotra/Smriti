@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -11,6 +11,30 @@ function jsonResponse(body, status = 200) {
     status,
     json: async () => body,
   };
+}
+
+function timelineResponse() {
+  return jsonResponse({
+    patient_id: summary.patient.id,
+    reports: [
+      {
+        id: "r-01",
+        document_id: "d-01",
+        category: "lab",
+        report_type: "lab_report",
+        report_date: "2025-11-02",
+        facility_name: "City Lab",
+        title: "City Lab",
+        summary: "HbA1c 8.9 %",
+        page_start: 1,
+        page_end: 1,
+        status: "auto",
+        reason: null,
+        review_count: 0,
+        facts: [],
+      },
+    ],
+  });
 }
 
 function documentResponse() {
@@ -43,13 +67,17 @@ function authenticatedFetch() {
     if (url === `/api/patients/${summary.patient.id}/summary`) {
       return Promise.resolve(jsonResponse(summary));
     }
-    if (url === "/api/documents/d-01") return Promise.resolve(documentResponse());
+    if (url === `/api/patients/${summary.patient.id}/timeline`) {
+      return Promise.resolve(timelineResponse());
+    }
+    if (url === "/api/documents/d-01?page=1&offset=0") return Promise.resolve(documentResponse());
     return Promise.reject(new Error(`Unexpected request: ${url}`));
   });
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
 });
 
 describe("App navigation", () => {
@@ -69,6 +97,72 @@ describe("App navigation", () => {
     expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toHaveFocus();
   });
 
+  it("loads Queue from its URL after refresh and returns there from a document", async () => {
+    window.history.replaceState(null, "", "#/queue");
+    const baseFetch = authenticatedFetch();
+    vi.stubGlobal("fetch", vi.fn((url, options) => url.startsWith("/api/jobs?")
+      ? Promise.resolve(jsonResponse({ jobs: [{ id: "j-1", document_id: "d-01", state: "queued", total: 1 }], has_more: false }))
+      : baseFetch(url, options)));
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Queue" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Open document" }));
+    expect(window.location.hash).toBe("#/documents/d-01");
+    await screen.findByRole("heading", { name: "Document review" });
+    await user.click(screen.getByRole("button", { name: "Back to queue" }));
+    expect(window.location.hash).toBe("#/queue");
+    expect(screen.getByRole("heading", { name: "Queue" })).toHaveFocus();
+  });
+
+  it("keeps document page controls and browser hash navigation in sync", async () => {
+    window.history.replaceState(null, "", "#/documents/d-01?page=21");
+    const baseFetch = authenticatedFetch();
+    vi.stubGlobal("fetch", vi.fn(async (url, options) => {
+      if (url.startsWith("/api/documents/d-01?")) {
+        const page = Number(new URL(url, "http://localhost").searchParams.get("page"));
+        return jsonResponse({ ...await documentResponse().json(), page_count: 73, detail_page: page,
+          pages: [{ page, url: `/api/documents/d-01/page/${page}` }] });
+      }
+      return baseFetch(url, options);
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("img", { name: "Page 21 of the Lab report" });
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("img", { name: "Page 22 of the Lab report" });
+    expect(window.location.hash).toBe("#/documents/d-01?page=22");
+    act(() => {
+      window.history.replaceState(null, "", "#/documents/d-01?page=21");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await screen.findByRole("img", { name: "Page 21 of the Lab report" });
+  });
+
+  it("handles browser hash navigation and guards files not yet uploaded", async () => {
+    vi.stubGlobal("fetch", authenticatedFetch());
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "P-01" });
+    await user.click(screen.getByRole("button", { name: "Add document" }));
+    expect(window.location.hash).toBe("#/intake");
+    await user.upload(screen.getByLabelText("Document file"), new File(["one"], "one.png", { type: "image/png" }));
+    act(() => {
+      window.history.replaceState(null, "", "#/summary");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(window.location.hash).toBe("#/intake");
+    expect(screen.getByRole("heading", { name: "Add a document" })).toBeInTheDocument();
+    confirm.mockReturnValue(true);
+    act(() => {
+      window.history.replaceState(null, "", "#/summary");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(screen.getByRole("heading", { name: "P-01" })).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
   it("opens a document review and returns to the summary", async () => {
     vi.stubGlobal("fetch", authenticatedFetch());
     const user = userEvent.setup();
@@ -78,18 +172,44 @@ describe("App navigation", () => {
       await screen.findByRole("heading", { level: 1, name: "P-01" }),
     ).toBeInTheDocument();
     await user.click(
-      await screen.findByRole("button", { name: "Review Lab report d-01" }),
+      await screen.findByRole("button", { name: /^Open City Lab from/ }),
     );
 
     expect(
       await screen.findByRole("heading", { level: 1, name: "Document review" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: "Page 1 of the Lab report" }),
+      await screen.findByRole("img", { name: "Page 1 of the Lab report" }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Back to summary" }));
     expect(screen.getByRole("heading", { level: 1, name: "P-01" })).toBeInTheDocument();
+  });
+
+  it("uploads a batch and opens the selected document for review", async () => {
+    const baseFetch = authenticatedFetch();
+    let uploads = 0;
+    const fetchMock = vi.fn((url, options) => {
+      if (url === "/api/documents") {
+        uploads += 1;
+        return Promise.resolve(jsonResponse({ document_id: null, job_id: `j-${uploads}`, pages: null, status: "pending_intake" }, 202));
+      }
+      if (url.startsWith("/api/jobs/")) return Promise.resolve(jsonResponse({ state: "done", stage: "done", document_id: url.endsWith("j-1") ? "d-01" : "d-02", total_pages: 1, events: [], verification_state: "skipped" }));
+      return baseFetch(url, options);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "P-01" });
+    await user.click(screen.getByRole("button", { name: "Add document" }));
+    await user.upload(screen.getByLabelText("Document file"), [new File(["one"], "one.png", { type: "image/png" }), new File(["two"], "two.png", { type: "image/png" })]);
+    await user.click(screen.getByLabelText(/permission to store/i));
+    await user.click(screen.getByRole("button", { name: "Upload 2 documents" }));
+    const first = within(screen.getByRole("region", { name: "one.png" }));
+    await user.click(await first.findByRole("button", { name: "Review extracted fields" }));
+    expect(await screen.findByRole("heading", { name: "Document review" })).toHaveFocus();
+    expect((await screen.findByRole("img", { name: "Page 1 of the Lab report" })).querySelector("img")).toHaveAttribute("src", "/api/documents/d-01/page/1");
+    expect(uploads).toBe(2);
   });
 
   it("shows sign in when there is no session and loads the summary after login", async () => {
@@ -102,6 +222,9 @@ describe("App navigation", () => {
       if (url === "/api/auth/login") return Promise.resolve(jsonResponse(summary.patient));
       if (url === `/api/patients/${summary.patient.id}/summary`) {
         return Promise.resolve(jsonResponse(summary));
+      }
+      if (url === `/api/patients/${summary.patient.id}/timeline`) {
+        return Promise.resolve(timelineResponse());
       }
       return Promise.reject(new Error(`Unexpected request: ${url}`));
     });
@@ -136,6 +259,9 @@ describe("App navigation", () => {
       }
       if (url === "/api/auth/login") return Promise.resolve(jsonResponse(summary.patient));
       if (url === `/api/patients/${summary.patient.id}/summary`) return summaryPromise;
+      if (url === `/api/patients/${summary.patient.id}/timeline`) {
+        return Promise.resolve(timelineResponse());
+      }
       return Promise.reject(new Error(`Unexpected request: ${url}`));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -159,7 +285,7 @@ describe("App navigation", () => {
 });
 
 describe("Dashboard shell", () => {
-  it("renders the four zones in fixed order", () => {
+  it("puts the history spine before the supporting zones", () => {
     render(<Dashboard data={summary} />);
 
     const headings = screen
@@ -168,11 +294,10 @@ describe("Dashboard shell", () => {
 
     expect(headings).toEqual([
       "Coverage",
-      "Problems",
+      "History",
       "Current medications",
       "Results",
       "Pending",
-      "Documents",
     ]);
   });
 
@@ -218,7 +343,7 @@ describe("Dashboard shell", () => {
     expect(screen.getByText("R/V after 2 weeks")).toBeInTheDocument();
     expect(screen.getByText(/Review/)).toBeInTheDocument();
     expect(screen.getByText("Lab report")).toBeInTheDocument();
-    expect(screen.getByText("Processed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Open Lab report from/ })).toBeInTheDocument();
   });
 
   it("does not flash empty panels while the summary loads", () => {

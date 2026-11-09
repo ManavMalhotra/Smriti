@@ -3,11 +3,13 @@ import Problems from "../components/Problems";
 import Medications from "../components/Medications";
 import Results from "../components/Results";
 import Pending from "../components/Pending";
-import Documents from "../components/Documents";
 import Processing from "../components/Processing";
-import Timeline from "../components/Timeline";
+import History from "../components/History";
 import UnassignedFindings from "../components/UnassignedFindings";
 import Footer from "../components/Footer";
+
+// Problems has no extractor yet (summary.py returns []); keep it off-screen until it produces data.
+const SHOW_PROBLEMS = false;
 
 const EMPTY_COVERAGE = {
   first_date: null,
@@ -68,16 +70,17 @@ export default function Dashboard({
             <Processing jobs={activeJobs} onQueue={onQueue} />
 
             <div className="zone-grid">
-              <Timeline
+              <History
                 reports={timeline}
+                documents={view.documents}
                 loading={timelineLoading}
                 error={timelineError}
                 onOpen={onOpenDocument}
               />
             </div>
 
-            <div className="zone-grid two">
-              <Problems problems={view.problems} />
+            <div className={SHOW_PROBLEMS ? "zone-grid two" : "zone-grid"}>
+              {SHOW_PROBLEMS ? <Problems problems={view.problems} /> : null}
               <Medications medications={view.medications} />
             </div>
 
@@ -85,9 +88,8 @@ export default function Dashboard({
               <Results results={view.results} />
             </div>
 
-            <div className="zone-grid two">
+            <div className="zone-grid">
               <Pending pending={view.pending} />
-              <Documents documents={view.documents} onOpen={onOpenDocument} />
             </div>
 
             <div className="zone-grid">
