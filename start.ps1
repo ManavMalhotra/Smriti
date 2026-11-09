@@ -1,9 +1,11 @@
 [CmdletBinding()]
 param(
+    [ValidateRange(1, 65535)]
     [int]$Port = 8000
 )
 
 $ErrorActionPreference = "Stop"
+try {
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
@@ -23,12 +25,13 @@ function Get-Npm {
 if (-not (Test-Path $Python)) {
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if ($uv) {
-        & uv venv .venv --python 3.11
+        & uv venv .venv --python 3.11 *> $null
     } elseif (Get-Command py -ErrorAction SilentlyContinue) {
-        & py -3.11 -m venv .venv
+        & py -3.11 -m venv .venv *> $null
     } else {
-        & python -m venv .venv
+        & python -m venv .venv *> $null
     }
+    if ($LASTEXITCODE -ne 0) { throw "Environment setup failed." }
 }
 
 if (-not (Test-Path $Python)) {
@@ -45,11 +48,15 @@ if ($wanted -ne $installed) {
     Write-Host "Installing Python dependencies..."
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if ($uv) {
-        & uv pip install --python $Python -r $Requirements
+        & uv pip install --python $Python -r $Requirements *> $null
+        if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
     } else {
-        & $Python -m ensurepip --upgrade | Out-Null
-        & $Python -m pip install --upgrade pip
-        & $Python -m pip install -r $Requirements
+        & $Python -m ensurepip --upgrade *> $null
+        if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
+        & $Python -m pip install --upgrade pip *> $null
+        if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
+        & $Python -m pip install -r $Requirements *> $null
+        if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
     }
     Set-Content -Path $RequirementsMarker -Value $wanted -NoNewline
 }
@@ -68,10 +75,11 @@ if (-not $needsInstall -and (Test-Path $PackageLock)) {
 if ($needsInstall) {
     Write-Host "Installing frontend dependencies..."
     if (Test-Path $PackageLock) {
-        & $Npm --prefix web ci
+        & $Npm --prefix web ci *> $null
     } else {
-        & $Npm --prefix web install
+        & $Npm --prefix web install *> $null
     }
+    if ($LASTEXITCODE -ne 0) { throw "Frontend setup failed." }
 }
 
 $needsBuild = -not (Test-Path $Dist)
@@ -90,13 +98,22 @@ if (-not $needsBuild) {
 }
 if ($needsBuild) {
     Write-Host "Building the web app..."
-    & $Npm --prefix web run build
+    & $Npm --prefix web run build *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
 }
 
 $env:PYTHONUTF8 = "1"
 $env:PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK = "True"
+$env:HF_HUB_OFFLINE = "1"
+$env:TRANSFORMERS_OFFLINE = "1"
 Write-Host ""
 Write-Host "Smriti is starting at http://127.0.0.1:$Port/"
 Write-Host "Press Ctrl+C to stop."
 Write-Host ""
-& $Python -m uvicorn smriti.main:app --host 127.0.0.1 --port $Port
+& $Python -m smriti.server --port $Port
+if ($LASTEXITCODE -ne 0) { throw "Smriti stopped (exit code $LASTEXITCODE)." }
+} catch {
+    Write-Host $_.Exception.Message
+    Write-Host "Logs: $Root\data\logs\smriti.jsonl"
+    exit 1
+}
