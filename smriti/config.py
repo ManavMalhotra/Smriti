@@ -63,7 +63,7 @@ class Settings:
     vlm_startup_seconds: float = 30.0
     vlm_request_seconds: float = 240.0
     vlm_overhead_seconds: float = 60.0
-    vlm_min_available_bytes: int = 5 * 1024**3
+    vlm_min_available_bytes: int = 2 * 1024**3
     cleanup_wait_seconds: float = 5.0
     ram_sample_seconds: float = 1.0
     gpu_poll_seconds: float = 2.0
@@ -192,7 +192,7 @@ def load_settings() -> Settings:
         vlm_startup_seconds=float(os.getenv("SMRITI_VLM_STARTUP_SECONDS", "30")),
         vlm_request_seconds=float(os.getenv("SMRITI_VLM_REQUEST_SECONDS", "240")),
         vlm_overhead_seconds=float(os.getenv("SMRITI_VLM_OVERHEAD_SECONDS", "60")),
-        vlm_min_available_bytes=int(os.getenv("SMRITI_VLM_MIN_AVAILABLE_BYTES", str(5 * 1024**3))),
+        vlm_min_available_bytes=int(os.getenv("SMRITI_VLM_MIN_AVAILABLE_BYTES", str(2 * 1024**3))),
         cleanup_wait_seconds=float(os.getenv("SMRITI_CLEANUP_WAIT_SECONDS", "5")),
         ram_sample_seconds=float(os.getenv("SMRITI_RAM_SAMPLE_SECONDS", "1")),
         gpu_poll_seconds=float(os.getenv("SMRITI_GPU_POLL_SECONDS", "2")),
