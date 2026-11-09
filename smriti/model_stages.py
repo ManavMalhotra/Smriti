@@ -124,7 +124,7 @@ def qwen_target(context, report):
         for member in _members(context, settings):
             row = submission(engine, member["job_id"])
             current_job = row["job_id"]
-            eligible = row["manifest"]["printed_pages"]
+            eligible = row["page_count"]
             completed = sum(read_page(settings, row, "qwen", page) is not None
                             for page in range(1, member["start"]))
             for page in range(member["start"], member["end"] + 1):
@@ -132,9 +132,7 @@ def qwen_target(context, report):
                 submission(engine, row["job_id"])
                 if page > row["page_count"]:
                     raise SpoolError("prepared_artifact_invalid")
-                if validate_source(settings, row, page)["capture_type"] == "handwritten":
-                    _progress(engine, row["job_id"], "qwen_skipped", page=page, completed=completed, total=eligible, model=VLM_ENGINE_NAME)
-                    continue
+                validate_source(settings, row, page)
                 cached = read_page(settings, row, "qwen", page)
                 if cached is not None:
                     completed += 1

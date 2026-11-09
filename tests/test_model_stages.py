@@ -116,18 +116,31 @@ def test_qwen_windows_preserve_global_counts_empty_first_page_and_lifecycle(monk
     assert requests == [1, 2, 3] and len(sessions) == 2
 
 
-def test_handwritten_qwen_window_never_starts_a_model(monkeypatch, spool_db, settings):
+def test_handwritten_pages_are_read_instead_of_skipped(monkeypatch, spool_db, settings):
     from smriti import vlm
 
     job, context = prepared(spool_db, settings)
-    original = model_stages.validate_source
-    monkeypatch.setattr(model_stages, "validate_source", lambda *args: {**original(*args), "capture_type": "handwritten"})
-    monkeypatch.setattr(vlm, "is_vlm_available", lambda: pytest.fail("No model for handwriting"))
+    monkeypatch.setattr(model_stages, "psutil", type("P", (), {"virtual_memory": staticmethod(lambda: type("M", (), {"available": 8 * 1024**3})())}))
+    monkeypatch.setattr(vlm, "is_vlm_available", lambda: True)
+    pages = []
+
+    class Session:
+        def __init__(self, timeout, on_event):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(vlm, "VlmSession", Session)
+    monkeypatch.setattr(vlm, "extract_page_vlm", lambda path, page, **kw: pages.append(page) or [])
     model_stages.qwen_target(context, lambda *args, **kwargs: None)
+    assert pages, "handwritten pages must no longer be skipped"
     with spool_db.connect() as conn:
         progress = json.loads(conn.execute(text("SELECT progress_json FROM jobs")).scalar_one())
-    assert progress["events"][-1]["event"] == "qwen_skipped"
-    assert progress["current_page"] == 1 and progress["completed_pages"] == 0
+    assert "qwen_skipped" not in [event["event"] for event in progress["events"]]
 
 
 @pytest.mark.parametrize("changes", [{"engine": "OTHER"}, {"model_version": "OLD"}, {"source": "unknown"}])
