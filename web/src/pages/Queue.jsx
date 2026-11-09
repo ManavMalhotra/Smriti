@@ -136,11 +136,11 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
                 {selected === job.id && !detail && !detailError ? <p role="status">Loading processing details…</p> : null}
                 <div className="form-actions">
                   <button type="button" className="text-button" aria-expanded={selected === job.id} onClick={() => select(job.id)}>{selected === job.id ? "Hide details" : "Show details"}</button>
+                  {["failed", "queued"].includes(job.state) ? (
+                    <button type="button" className="button-secondary" onClick={() => retry(job.id)}>Retry</button>
+                  ) : null}
                   {job.state === "failed" ? (
-                    <>
-                      <button type="button" className="button-secondary" onClick={() => retry(job.id)}>Retry</button>
-                      <button type="button" className="text-button" onClick={() => remove(job.id)}>Delete</button>
-                    </>
+                    <button type="button" className="text-button" onClick={() => remove(job.id)}>Delete</button>
                   ) : null}
                   {job.document_id ? <button type="button" className="button-secondary" onClick={() => onOpenDocument(job.document_id, job.current_page ?? 1)}>{job.state === "done" ? "Review extracted fields" : "Open document"}</button> : null}
                 </div>

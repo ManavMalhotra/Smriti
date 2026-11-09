@@ -7,6 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from api.errors import api_error
 from smriti.auth import audit, current_patient
@@ -81,16 +82,21 @@ def retry_job(
     with engine.begin() as conn:
         owned = conn.execute(
             text("""SELECT j.id FROM jobs j JOIN document d ON d.id = j.document_id
-                    WHERE j.id = :id AND d.patient_id = :patient_id AND j.state = 'failed'"""),
+                    WHERE j.id = :id AND d.patient_id = :patient_id
+                      AND j.state IN ('failed', 'queued')"""),
             {"id": job_id, "patient_id": patient["id"]},
         ).first()
         if owned is None:
-            api_error(404, "not_found", f"No failed job {job_id}.")
+            api_error(404, "not_found", f"No retryable job {job_id}.")
+        try:
+            conn.execute(text("""UPDATE submissions SET error_code = NULL, batch_id = NULL, batch_position = NULL
+                                 WHERE job_id = :id"""), {"id": job_id})
+        except IntegrityError:
+            # The batch it belongs to is still active; re-freezing is not allowed.
+            api_error(409, "job_active", "This document is already being processed.")
         conn.execute(text("UPDATE jobs SET state = 'queued', error = NULL WHERE id = :id"), {"id": job_id})
         conn.execute(text("""UPDATE document SET status = 'queued'
                              WHERE id = (SELECT document_id FROM jobs WHERE id = :id)"""), {"id": job_id})
-        conn.execute(text("""UPDATE submissions SET error_code = NULL, batch_id = NULL, batch_position = NULL
-                             WHERE job_id = :id"""), {"id": job_id})
     return {"id": job_id, "state": "queued"}
 
 

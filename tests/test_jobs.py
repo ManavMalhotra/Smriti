@@ -198,7 +198,7 @@ def _failed(client, app, patient_id):
     return result
 
 
-def test_retry_requeues_only_failed_jobs(client, app):
+def test_retry_requeues_failed_and_stuck_queued_jobs(client, app):
     patient_id = make_patient(client)
     result = _failed(client, app, patient_id)
     job_id = result["job_id"]
@@ -208,7 +208,10 @@ def test_retry_requeues_only_failed_jobs(client, app):
         # a retried job must be re-admittable: the coordinator only freezes batch_id IS NULL
         assert conn.execute(text("SELECT batch_id FROM submissions WHERE job_id = :id"),
                             {"id": job_id}).scalar() is None
-    # a queued job is not retryable
+    # a job still queued is retryable again, but a running one is not
+    assert client.post(f"/api/jobs/{job_id}/retry").status_code == 200
+    with app.state.engine.begin() as conn:
+        conn.execute(text("UPDATE jobs SET state = 'running' WHERE id = :id"), {"id": job_id})
     assert client.post(f"/api/jobs/{job_id}/retry").status_code == 404
     with TestClient(app) as other:
         make_patient(other, alias="Other")
