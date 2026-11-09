@@ -233,7 +233,7 @@ def test_invalid_response_envelope_has_specific_safe_code(monkeypatch, tmp_path,
     response.close.assert_called_once()
 
 
-@pytest.mark.parametrize("size,expected", [((1600, 2400), (853, 1280)), ((100, 200), (100, 200))])
+@pytest.mark.parametrize("size,expected", [((1600, 2400), (683, 1024)), ((100, 200), (100, 200))])
 def test_request_resizing_preserves_source_and_budget(monkeypatch, tmp_path, size, expected):
     import base64
     import io

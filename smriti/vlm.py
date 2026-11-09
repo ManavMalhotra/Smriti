@@ -44,7 +44,8 @@ VLM_PORT = 8085
 VLM_URL = f"http://127.0.0.1:{VLM_PORT}"
 VLM_ENGINE_NAME = "vlm:glm-ocr-0.9b@q8_0+cuda"
 VLM_CONTEXT_TOKENS = 4096
-VLM_IMAGE_LONG_EDGE = 1280
+# shortcut: 1280px needs ~10GB of vision activations and OOMs a 4GB card; raise only with more VRAM.
+VLM_IMAGE_LONG_EDGE = 1024
 VLM_MAX_TOKENS = 2048
 # GLM-OCR is prompt-limited: it documents OCR tasks plus strict-schema JSON extraction only.
 VLM_PROMPT = (
