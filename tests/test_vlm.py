@@ -286,5 +286,7 @@ def test_launch_uses_requested_bounded_flags_and_private_output(monkeypatch):
                         ("--flash-attn", "off")]:
         assert args[args.index(flag) + 1] == value
     assert "--cache-type-k" not in args and "--cache-type-v" not in args
-    assert {"--no-mmproj-offload", "--no-warmup", "--offline", "--log-disable"} <= set(args)
+    # The vision projector stays on the GPU: CPU encoding cost 73s vs 8s per page on a 4 GB card.
+    assert "--no-mmproj-offload" not in args
+    assert {"--no-warmup", "--offline", "--log-disable"} <= set(args)
     assert spawn.call_args.kwargs["stdout"] == spawn.call_args.kwargs["stderr"] == vlm.subprocess.DEVNULL

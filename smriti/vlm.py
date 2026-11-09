@@ -123,7 +123,6 @@ class VlmSession:
             str(VLM_CONTEXT_TOKENS),
             "--parallel", "1",
             "--flash-attn", "off",
-            "--no-mmproj-offload",
             "-t", "6",
             "--no-warmup",
             "--offline",
