@@ -1,4 +1,4 @@
-"""SQLite setup. Migrations are numbered; the schema is a checked-in SQL file."""
+﻿"""SQLite setup. Migrations are numbered; the schema is a checked-in SQL file."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 MIGRATIONS_PATH = Path(__file__).with_name("migrations")
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 12
 
 
 def _migration_path(version: int) -> Path:
@@ -66,3 +66,4 @@ def create_db_engine(db_path: str | Path) -> Engine:
         cursor.close()
 
     return engine
+
