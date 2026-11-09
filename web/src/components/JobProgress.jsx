@@ -81,7 +81,7 @@ export default function JobProgress({ job, compact = false, detailsOpen = false 
         {job?.events_truncated > 0 ? <p className="job-log-warning">{job.events_truncated} earlier events omitted; showing the latest {events.length}.</p> : null}
         {events.length ? (
           <ol className="job-events">
-            {events.map((event) => (
+            {[...events].reverse().map((event) => (
               <li key={event.sequence} data-level={event.level}>
                 <div className="job-event-head">
                   <span className="event-level">{LEVELS[event.level] ?? event.level}</span>
