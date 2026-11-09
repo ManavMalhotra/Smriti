@@ -204,6 +204,10 @@ def test_retry_requeues_only_failed_jobs(client, app):
     job_id = result["job_id"]
     assert client.post(f"/api/jobs/{job_id}/retry").json() == {"id": job_id, "state": "queued"}
     assert client.get(f"/api/jobs/{job_id}").json()["state"] == "queued"
+    with app.state.engine.connect() as conn:
+        # a retried job must be re-admittable: the coordinator only freezes batch_id IS NULL
+        assert conn.execute(text("SELECT batch_id FROM submissions WHERE job_id = :id"),
+                            {"id": job_id}).scalar() is None
     # a queued job is not retryable
     assert client.post(f"/api/jobs/{job_id}/retry").status_code == 404
     with TestClient(app) as other:

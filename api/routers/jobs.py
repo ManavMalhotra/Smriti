@@ -89,7 +89,8 @@ def retry_job(
         conn.execute(text("UPDATE jobs SET state = 'queued', error = NULL WHERE id = :id"), {"id": job_id})
         conn.execute(text("""UPDATE document SET status = 'queued'
                              WHERE id = (SELECT document_id FROM jobs WHERE id = :id)"""), {"id": job_id})
-        conn.execute(text("UPDATE submissions SET error_code = NULL WHERE job_id = :id"), {"id": job_id})
+        conn.execute(text("""UPDATE submissions SET error_code = NULL, batch_id = NULL, batch_position = NULL
+                             WHERE job_id = :id"""), {"id": job_id})
     return {"id": job_id, "state": "queued"}
 
 
