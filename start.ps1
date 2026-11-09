@@ -111,7 +111,10 @@ Write-Host "Smriti is starting at http://127.0.0.1:$Port/"
 Write-Host "Press Ctrl+C to stop."
 Write-Host ""
 & $Python -m smriti.server --port $Port
-if ($LASTEXITCODE -ne 0) { throw "Smriti stopped (exit code $LASTEXITCODE)." }
+# Ctrl+C exits with STATUS_CONTROL_C_EXIT (-1073741510 / 3221225786); that is a normal stop.
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1073741510 -and $LASTEXITCODE -ne 3221225786) {
+    throw "Smriti stopped (exit code $LASTEXITCODE)."
+}
 } catch {
     Write-Host $_.Exception.Message
     Write-Host "Logs: $Root\data\logs\smriti.jsonl"
