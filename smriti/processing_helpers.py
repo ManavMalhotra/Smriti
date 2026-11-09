@@ -105,6 +105,9 @@ def verification_target(context, report):
                 for page in range(1, row["page_count"] + 1):
                     data = read_page(settings, row, "qwen", page)
                     if data is None:
+                        # The degraded model pass leaves handwritten pages unread by design.
+                        if page_metadata(settings, row["job_id"], page)["capture_type"] == "handwritten":
+                            continue
                         raise SpoolError("prepared_artifact_invalid")
                     unavailable += data.get("outcome") == "unavailable"
                     for item in data["fields"]:
