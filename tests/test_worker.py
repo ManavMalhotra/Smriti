@@ -1,26 +1,48 @@
-from __future__ import annotations
+"""Connected synthetic journeys through the bounded coordinator, never an eager production fallback."""
+
+from dataclasses import replace
+import json
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from smriti.ocr import OcrUnavailable, OcrWord
-from smriti.worker import process_next, recover_orphaned_jobs
-from tests.factory import (
-    jpeg_bytes,
-    make_patient,
-    pdf_bytes,
-    scanned_pdf_bytes,
-    text_image,
-    upload,
-)
+from smriti import vlm, publication, model_stages
+from smriti.extract import ExtractedField
+from smriti.ocr import OcrWord, OcrUnavailable
+from smriti.worker import _handwritten_pages, cross_check_extractions
+from tests.factory import jpeg_bytes, make_patient, pdf_bytes, scanned_pdf_bytes, text_image, upload
+from tests.staged_runtime import OCR_NAME, run_batch
 
 pytestmark = pytest.mark.integration
 
 
-class _FakeOcr:
-    name = "fake-ocr"
+def _field(value: str, *, engine: str) -> ExtractedField:
+    return ExtractedField(analyte_id="glucose", label_raw="Glucose", value_num=value,
+        value_text=value, unit_raw="mg/dL", ref_low="70", ref_high="100", flag_printed=None,
+        bbox=[0.1, 0.1, 0.2, 0.2], page=1, confidence=0.9, mapping_rule="exact", engine=engine)
 
+
+def test_cross_check_marks_exact_match_and_discrepancy():
+    ocr = _field("126", engine="ocr")
+    matched = cross_check_extractions([ocr], [_field("126", engine="vlm")], [[]])
+    assert matched[0].reason == "Dual-read verified: OCR and Qwen3-VL exact match."
+    assert matched[0].engine == "ocr+vlm"
+    mismatched = cross_check_extractions([ocr], [_field("128", engine="vlm")], [[]])
+    assert "OCR='126' vs VLM='128'" in mismatched[0].reason
+
+
+def test_cross_check_marks_unconfirmed_ocr_reading():
+    checked = cross_check_extractions([_field("126", engine="ocr")], [], [[]])
+    assert checked[0].reason == "OCR-only reading; Qwen3-VL did not confirm it. Review required."
+
+
+def test_handwritten_pages_reads_page_level_ingest_metadata():
+    quality = '{"pages":[{"page":1,"capture_type":"printed"},{"page":2,"capture_type":"handwritten"}]}'
+    assert _handwritten_pages(quality) == {2}
+
+
+class _FakeOcr:
     def read(self, _path):
         return [
             OcrWord("Collection Date: 02/11/2025", [0.1, 0.04, 0.8, 0.08], 0.98),
@@ -30,289 +52,160 @@ class _FakeOcr:
 
 
 class _NeverCalledOcr:
-    name = "never-called"
-
     def read(self, _path):
-        raise AssertionError("OCR must not run for a clean digital PDF")
+        pytest.fail("No OCR for usable PDF text or completed documents")
 
 
-class _FailingOcr:
-    name = "failing-ocr"
-
-    def read(self, _path):
-        raise OcrUnavailable("OCR model is missing")
-
-
-class _CtOcr:
-    name = "ct-ocr"
-
-    def read(self, _path):
-        return [
-            OcrWord("CT CHEST WITH IV CONTRAST", [0.1, 0.05, 0.8, 0.09], 0.99),
-            OcrWord("Computed tomography of the thorax.", [0.1, 0.10, 0.8, 0.14], 0.99),
-            OcrWord("Findings: Both lungs show normal aeration.", [0.1, 0.20, 0.8, 0.24], 0.98),
-            OcrWord(
-                "Impression: Normal CT scan of chest. No acute abnormality.",
-                [0.1, 0.35, 0.8, 0.39],
-                0.98,
-            ),
-        ]
-
-
-def _upload_without_type(client, patient_id):
-    return client.post(
-        "/api/documents",
-        data={"patient_id": patient_id, "consent_scope": "local"},
-        files={"file": ("page.jpg", jpeg_bytes(text_image()), "image/jpeg")},
-    )
+def untyped(client, patient):
+    return upload(client, patient, jpeg_bytes(text_image()), doc_type=None)
 
 
 def test_worker_extracts_lab_report_and_summary(client, app, settings):
-    patient_id = make_patient(client, alias="P-01")
-    uploaded = _upload_without_type(client, patient_id)
-    assert uploaded.status_code == 202, uploaded.text
-    body = uploaded.json()
-
-    assert process_next(app.state.engine, settings, ocr_engine=_FakeOcr()) is True
-
-    job = client.get(f"/api/jobs/{body['job_id']}")
-    assert job.status_code == 200
-    assert job.json()["state"] == "done"
-
-    document = client.get(f"/api/documents/{body['document_id']}")
-    assert document.status_code == 200
-    detail = document.json()
-    assert detail["doc_type"] == "lab_report"
-    assert detail["status"] == "done"
+    patient = make_patient(client)
+    result = untyped(client, patient).json()
+    assert run_batch(app.state.engine, settings, ocr_engine=_FakeOcr())
+    job = client.get(f"/api/jobs/{result['job_id']}").json()
+    assert job["state"] == "done" and job["finished_at"] and job["elapsed_seconds"] >= 0
+    events = [event["event"] for event in job["events"]]
+    assert events[:3] == ["intake_accepted", "preparing", "prepared"]
+    assert events.index("page_read") < events.index("extracting") < events.index("saving") < events.index("done")
+    assert "HbA1c" not in json.dumps(job) and "2025-11-02" not in json.dumps(job)
+    detail = client.get(f"/api/documents/{result['document_id']}").json()
+    assert detail["doc_type"] == "lab_report" and detail["status"] == "done"
     assert detail["collection_date"] == "2025-11-02"
-    assert len(detail["observations"]) == 2
-    assert len(detail["page_text"]) == 1
-    assert "HbA1c" in detail["page_text"][0]["text"]
+    assert len(detail["observations"]) == 2 and len(detail["reports"]) == 1
+    assert {item["report_id"] for item in detail["observations"]} == {detail["reports"][0]["id"]}
+    assert {item["fact_type"] for item in detail["observations"]} == {"lab"}
     assert {item["status"] for item in detail["observations"]} == {"review"}
     assert {item["source"] for item in detail["observations"]} == {"ocr"}
-    assert {item["model_version"] for item in detail["observations"]} == {"fake-ocr"}
-
-    summary = client.get(f"/api/patients/{patient_id}/summary")
-    assert summary.status_code == 200
-    data = summary.json()
-    assert data["patient"]["alias"] == "P-01"
-    assert len(data["documents"]) == 1
-    assert data["documents"][0]["review_count"] == 2
-    assert len(data["results"]) == 2
-    by_display = {result["display"]: result for result in data["results"]}
+    assert {item["model_version"] for item in detail["observations"]} == {OCR_NAME}
+    summary = client.get(f"/api/patients/{patient}/summary").json()
+    assert summary["documents"][0]["review_count"] == 2 and len(summary["results"]) == 2
+    by_display = {result["display"]: result for result in summary["results"]}
     assert by_display["HbA1c"]["points"][0]["value"] == 8.9
-    assert by_display["HbA1c"]["points"][0]["status"] == "review"
     assert by_display["Glucose"]["points"][0]["value"] == 126.0
 
 
-def test_worker_failure_is_visible(client, app, settings):
-    patient_id = make_patient(client, alias="P-01")
-    uploaded = _upload_without_type(client, patient_id)
-    body = uploaded.json()
-
-    assert process_next(app.state.engine, settings, ocr_engine=_FailingOcr()) is True
-
-    job = client.get(f"/api/jobs/{body['job_id']}").json()
-    assert job["state"] == "failed"
-    assert "OCR model is missing" in job["error"]
-    document = client.get(f"/api/documents/{body['document_id']}").json()
-    assert document["status"] == "failed"
+def test_worker_failure_is_private_and_keeps_stored_source(client, app, settings):
+    class Failing:
+        def read(self, path):
+            raise OcrUnavailable("PRIVATE_MEDICAL_SENTINEL")
+    result = untyped(client, make_patient(client)).json()
+    assert run_batch(app.state.engine, settings, ocr_engine=Failing())
+    job = client.get(f"/api/jobs/{result['job_id']}").json()
+    assert job["state"] == "failed" and "PRIVATE_MEDICAL_SENTINEL" not in json.dumps(job)
+    assert client.get(f"/api/documents/{result['document_id']}/page/1").status_code == 200
 
 
-def test_duplicate_detection_is_scoped_per_patient(app, settings):
+def test_duplicate_detection_is_scoped_per_patient(app):
     with TestClient(app) as alice, TestClient(app) as bob:
-        alice_id = make_patient(alice, alias="Alice")
-        bob_id = make_patient(bob, alias="Bob")
-        data = jpeg_bytes(text_image())
-
-        first = alice.post(
-            "/api/documents",
-            data={"patient_id": alice_id, "consent_scope": "local"},
-            files={"file": ("page.jpg", data, "image/jpeg")},
-        )
-        second = bob.post(
-            "/api/documents",
-            data={"patient_id": bob_id, "consent_scope": "local"},
-            files={"file": ("page.jpg", data, "image/jpeg")},
-        )
-
-        assert first.status_code == 202
-        assert second.status_code == 202
+        alice_id, bob_id = make_patient(alice), make_patient(bob, alias="Bob")
+        first, second = untyped(alice, alice_id), untyped(bob, bob_id)
+        assert first.status_code == second.status_code == 202
         assert first.json()["document_id"] != second.json()["document_id"]
 
 
-def test_patients_cannot_read_each_others_records(app, settings):
+def test_patients_cannot_read_each_others_records(app):
     with TestClient(app) as alice, TestClient(app) as bob:
-        alice_id = make_patient(alice, alias="Alice")
-        bob_id = make_patient(bob, alias="Bob")
-        uploaded = _upload_without_type(alice, alice_id)
-        body = uploaded.json()
-
-        assert bob.get(f"/api/documents/{body['document_id']}").status_code == 404
-        assert bob.get(f"/api/jobs/{body['job_id']}").status_code == 404
+        alice_id, bob_id = make_patient(alice), make_patient(bob, alias="Bob")
+        result = untyped(alice, alice_id).json()
+        assert bob.get(f"/api/documents/{result['document_id']}").status_code == 404
+        assert bob.get(f"/api/jobs/{result['job_id']}").status_code == 404
         assert bob.get(f"/api/patients/{alice_id}/summary").status_code == 403
-        assert bob.post(
-            "/api/documents",
-            data={"patient_id": alice_id, "consent_scope": "local"},
-            files={"file": ("page.jpg", jpeg_bytes(text_image()), "image/jpeg")},
-        ).status_code == 403
-
-        own_summary = bob.get(f"/api/patients/{bob_id}/summary")
-        assert own_summary.status_code == 200
-        assert own_summary.json()["documents"] == []
+        assert bob.post("/api/documents", data={"patient_id": alice_id, "consent_scope": "local"}, files={"file": ("synthetic.jpg", jpeg_bytes(text_image()), "image/jpeg")}).status_code == 403
+        assert bob.get(f"/api/patients/{bob_id}/summary").json()["documents"] == []
 
 
-def test_digital_pdf_uses_text_layer_without_ocr(client, app, settings):
-    patient_id = make_patient(client, alias="P-01")
-    response = upload(
-        client,
-        patient_id,
-        pdf_bytes(2),
-        filename="report.pdf",
-        content_type="application/pdf",
-    )
-    assert response.status_code == 202, response.text
-    body = response.json()
-
-    assert process_next(app.state.engine, settings, ocr_engine=_NeverCalledOcr()) is True
-
-    assert client.get(f"/api/jobs/{body['job_id']}").json()["state"] == "done"
-    detail = client.get(f"/api/documents/{body['document_id']}").json()
+@pytest.mark.parametrize("digital", [True, False])
+def test_digital_pdf_avoids_ocr_and_scanned_pdf_uses_it(client, app, settings, digital):
+    data = pdf_bytes(2) if digital else scanned_pdf_bytes()
+    result = upload(client, make_patient(client), data, filename="synthetic.pdf", content_type="application/pdf").json()
+    assert run_batch(app.state.engine, settings, ocr_engine=_NeverCalledOcr() if digital else _FakeOcr())
+    detail = client.get(f"/api/documents/{result['document_id']}").json()
     assert detail["status"] == "done"
-    assert {page["engine"] for page in detail["page_text"]} == {"text_layer"}
-    assert {page["source"] for page in detail["page_text"]} == {"text_layer"}
-    assert all(
-        page["model_version"].startswith("pymupdf:")
-        for page in detail["page_text"]
-    )
+    assert {page["source"] for page in detail["page_text"]} == {"text_layer" if digital else "ocr"}
+    assert {page["engine"] for page in detail["page_text"]} == {"text_layer" if digital else OCR_NAME}
     assert any("HbA1c" in page["text"] for page in detail["page_text"])
 
 
-def test_scanned_pdf_falls_back_to_ocr(client, app, settings):
-    patient_id = make_patient(client, alias="P-01")
-    response = upload(
-        client,
-        patient_id,
-        scanned_pdf_bytes(),
-        filename="scan.pdf",
-        content_type="application/pdf",
-    )
-    assert response.status_code == 202, response.text
-    body = response.json()
-
-    assert process_next(app.state.engine, settings, ocr_engine=_FakeOcr()) is True
-
-    detail = client.get(f"/api/documents/{body['document_id']}").json()
-    assert detail["status"] == "done"
-    assert {page["engine"] for page in detail["page_text"]} == {"fake-ocr"}
-    assert {page["source"] for page in detail["page_text"]} == {"ocr"}
-    assert {page["model_version"] for page in detail["page_text"]} == {"fake-ocr"}
+def test_done_reviewed_document_is_not_reprocessed_and_disposable_cache_is_removed(client, app, settings):
+    result = untyped(client, make_patient(client)).json()
+    assert run_batch(app.state.engine, settings, ocr_engine=_FakeOcr())
+    detail = client.get(f"/api/documents/{result['document_id']}").json()
+    observation = detail["observations"][0]
+    assert client.post(f"/api/observations/{observation['id']}/review", json={"action": "accept"}).status_code == 200
+    assert not run_batch(app.state.engine, settings, ocr_engine=_NeverCalledOcr())
+    assert not (settings.upload_dir / ".runtime" / result["job_id"]).exists()
+    again = client.get(f"/api/documents/{result['document_id']}").json()
+    assert next(item for item in again["observations"] if item["id"] == observation["id"])["status"] == "auto"
 
 
-def test_stage_artifacts_cached_and_reused_on_resume(client, app, settings):
-    patient_id = make_patient(client, alias="P-01")
-    response = upload(
-        client,
-        patient_id,
-        scanned_pdf_bytes(),
-        filename="scan_stage.pdf",
-        content_type="application/pdf",
-    )
-    assert response.status_code == 202
-    body = response.json()
-    job_id = body["job_id"]
-    doc_id = body["document_id"]
-
-    # Initial processing with OCR
-    assert process_next(app.state.engine, settings, ocr_engine=_FakeOcr()) is True
-
-    # Verify stage_artifact rows created in SQLite
-    with app.state.engine.connect() as conn:
-        doc = conn.execute(
-            text("SELECT content_hash FROM document WHERE id = :id"), {"id": doc_id}
-        ).first()
-        content_hash = doc[0]
-        artifacts = conn.execute(
-            text(
-                "SELECT page, stage, model_version FROM stage_artifact WHERE content_hash = :hash"
-            ),
-            {"hash": content_hash},
-        ).all()
-        assert len(artifacts) >= 1
-        assert artifacts[0][1] == "ocr"
-
-        job = conn.execute(
-            text("SELECT state, stage FROM jobs WHERE id = :id"), {"id": job_id}
-        ).first()
-        assert job[0] == "done"
-        assert job[1] == "done"
-
-    # Reset job to queued to simulate a resume/re-run
-    with app.state.engine.begin() as conn:
-        conn.execute(
-            text("UPDATE jobs SET state = 'queued', stage = 'stage_ocr' WHERE id = :id"),
-            {"id": job_id},
-        )
-
-    # Process again with _NeverCalledOcr() - proves OCR is completely bypassed via stage_artifact cache!
-    assert process_next(app.state.engine, settings, ocr_engine=_NeverCalledOcr()) is True
-
-    detail = client.get(f"/api/documents/{doc_id}").json()
-    assert detail["status"] == "done"
+def test_worker_extracts_grounded_imaging_sections(client, app, settings):
+    class CtOcr:
+        def read(self, path):
+            return [
+                OcrWord("CT CHEST WITH IV CONTRAST", [0.1, 0.05, 0.8, 0.09], 0.99),
+                OcrWord("Computed tomography of the thorax.", [0.1, 0.10, 0.8, 0.14], 0.99),
+                OcrWord("Findings: Both lungs show normal aeration.", [0.1, 0.20, 0.8, 0.24], 0.98),
+                OcrWord("Impression: Normal CT scan of chest. No acute abnormality.", [0.1, 0.35, 0.8, 0.39], 0.98),
+            ]
+    result = untyped(client, make_patient(client)).json()
+    assert run_batch(app.state.engine, settings, ocr_engine=CtOcr())
+    detail = client.get(f"/api/documents/{result['document_id']}").json()
+    assert detail["doc_type"] == "ct" and detail["status"] == "done"
+    impression = next(item for item in detail["observations"] if item["label_raw"] == "Impression")
+    assert "Normal CT scan" in impression["value_text"] and "Grounded prose" in impression["reason"]
+    assert impression["value_num"] is None and impression["evidence_quote"] == impression["value_text"]
+    assert detail["reports"][0]["category"] == "imaging"
 
 
-def test_worker_extracts_prose_sections_from_imaging_report(client, app, settings):
-    patient_id = make_patient(client, alias="P-01")
-    response = upload(
-        client,
-        patient_id,
-        scanned_pdf_bytes(),
-        filename="ct_report.pdf",
-        content_type="application/pdf",
-    )
-    assert response.status_code == 202
-    body = response.json()
+class _FakeVlmSession:
+    def __init__(self, *, timeout, on_event):
+        self.on_event = on_event
 
-    assert process_next(app.state.engine, settings, ocr_engine=_CtOcr()) is True
+    def __enter__(self):
+        self.on_event("qwen_ready", duration=0.01)
+        return self
 
-    detail = client.get(f"/api/documents/{body['document_id']}").json()
-    assert detail["status"] == "done"
-    assert detail["doc_type"] == "ct"
-
-    labels = {obs["label_raw"]: obs for obs in detail["observations"]}
-    assert "Impression" in labels
-    assert "Normal CT scan of chest" in labels["Impression"]["value_text"]
-    assert "Grounded prose extraction" in labels["Impression"]["reason"]
-    assert labels["Impression"]["value_num"] is None
-    assert labels["Impression"]["status"] == "review"
+    def __exit__(self, *args):
+        self.on_event("unloading")
+        self.on_event("unloaded")
 
 
-def test_recover_orphaned_jobs_cleans_stranded_documents(app):
-    with app.state.engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO patient (id, alias, created_at)
-                VALUES ('p-stranded', 'Stranded', '2026-10-25T00:00:00Z')
-                """
-            )
-        )
-        conn.execute(
-            text(
-                """
-                INSERT INTO document
-                    (id, patient_id, doc_type, capture_type, image_path,
-                     page_count, content_hash, status, created_at)
-                VALUES
-                    ('d-stranded', 'p-stranded', 'lab_report', 'printed', 'img-str',
-                     1, 'hash-stranded', 'processing', '2026-10-25T00:00:00Z')
-                """
-            )
-        )
-    recovered = recover_orphaned_jobs(app.state.engine)
-    assert recovered >= 1
-    with app.state.engine.connect() as conn:
-        status = conn.execute(
-            text("SELECT status FROM document WHERE id = 'd-stranded'")
-        ).scalar_one()
-    assert status == "failed"
+@pytest.mark.parametrize("outcome", ["success", "empty", "failure", "unavailable"])
+def test_worker_qwen_events_and_private_failures(client, app, settings, monkeypatch, outcome):
+    result = untyped(client, make_patient(client)).json()
+    monkeypatch.setattr(vlm, "is_vlm_available", lambda: outcome != "unavailable")
+    monkeypatch.setattr(vlm, "VlmSession", _FakeVlmSession)
+    monkeypatch.setattr(model_stages, "psutil", type("P", (), {"virtual_memory": staticmethod(lambda: type("M", (), {"available": 8 * 1024**3})())}))
+    def infer(path, page, **kwargs):
+        progress = client.get(f"/api/jobs/{result['job_id']}").json()
+        assert progress["stage"] == "qwen" and progress["current_page"] == 1 and progress["completed_pages"] == 0
+        if outcome == "failure":
+            raise RuntimeError("PRIVATE_MEDICAL_SENTINEL")
+        return [_field("126", engine=vlm.VLM_ENGINE_NAME)] if outcome == "success" else []
+    monkeypatch.setattr(vlm, "extract_page_vlm", infer)
+    assert run_batch(app.state.engine, replace(settings, vlm_enabled=True), ocr_engine=_FakeOcr())
+    job = client.get(f"/api/jobs/{result['job_id']}").json()
+    assert job["state"] == "done"
+    events = [event["event"] for event in job["events"]]
+    assert "qwen_disabled" not in events
+    if outcome == "success":
+        assert events.index("qwen_page") < events.index("cross_checked") < events.index("saving") < events.index("done")
+    else:
+        assert events[-1] == "done" and job["verification_state"] == "unavailable"
+        detail = client.get(f"/api/documents/{result['document_id']}").json()
+        assert all(field["status"] == "review" for field in detail["observations"])
+        assert any("OCR-only" in field["reason"] for field in detail["observations"])
+    assert "PRIVATE_MEDICAL_SENTINEL" not in json.dumps(job)
+
+
+def test_failed_save_never_announces_done_or_publishes_partial_facts(client, app, settings, monkeypatch):
+    result = untyped(client, make_patient(client)).json()
+    def fail(*args):
+        raise RuntimeError("PRIVATE_SAVE_FAILURE")
+    monkeypatch.setattr(publication, "_rows", fail)
+    assert run_batch(app.state.engine, settings, ocr_engine=_FakeOcr())
+    job = client.get(f"/api/jobs/{result['job_id']}").json()
+    assert job["state"] == "failed" and all(event["event"] != "done" for event in job["events"])
+    assert client.get(f"/api/documents/{result['document_id']}").json()["observations"] == []
