@@ -4,6 +4,9 @@ import Medications from "../components/Medications";
 import Results from "../components/Results";
 import Pending from "../components/Pending";
 import Documents from "../components/Documents";
+import Processing from "../components/Processing";
+import Timeline from "../components/Timeline";
+import UnassignedFindings from "../components/UnassignedFindings";
 import Footer from "../components/Footer";
 
 const EMPTY_COVERAGE = {
@@ -17,10 +20,15 @@ export default function Dashboard({
   data,
   patient,
   onAdd,
+  onQueue,
   onOpenDocument,
   onSignOut,
   loading = false,
   error = "",
+  timeline = [],
+  timelineLoading = false,
+  timelineError = "",
+  activeJobs = [],
 }) {
   const view = data ?? {
     patient,
@@ -39,6 +47,7 @@ export default function Dashboard({
         patient={view.patient}
         coverage={view.coverage}
         onAdd={onAdd}
+        onQueue={onQueue}
         onSignOut={onSignOut}
       />
 
@@ -56,6 +65,17 @@ export default function Dashboard({
 
         {ready ? (
           <>
+            <Processing jobs={activeJobs} onQueue={onQueue} />
+
+            <div className="zone-grid">
+              <Timeline
+                reports={timeline}
+                loading={timelineLoading}
+                error={timelineError}
+                onOpen={onOpenDocument}
+              />
+            </div>
+
             <div className="zone-grid two">
               <Problems problems={view.problems} />
               <Medications medications={view.medications} />
@@ -68,6 +88,14 @@ export default function Dashboard({
             <div className="zone-grid two">
               <Pending pending={view.pending} />
               <Documents documents={view.documents} onOpen={onOpenDocument} />
+            </div>
+
+            <div className="zone-grid">
+              <UnassignedFindings
+                results={view.results}
+                timeline={timeline}
+                onOpenDocument={onOpenDocument}
+              />
             </div>
           </>
         ) : null}
