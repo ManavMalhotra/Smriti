@@ -130,11 +130,14 @@ def upload(
         "consent_scope": "local",
     }
     form.update(fields)
-    return client.post(
+    response = client.post(
         "/api/documents",
         data=form,
         files={"file": (filename, data, content_type)},
     )
+    from tests.staged_runtime import prepare_response
+
+    return prepare_response(client, response)
 
 
 def pdf_bytes(pages: int = 3) -> bytes:

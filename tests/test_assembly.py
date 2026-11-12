@@ -43,3 +43,23 @@ def test_blank_gap_splits_table_regions():
 
 def test_empty_page_has_no_regions():
     assert assemble_page([]).regions == ()
+
+
+def test_carry_table_template_across_pages():
+    from smriti.assembly import ColumnSpan, TableTemplate, carry_table_template
+
+    prev_template = TableTemplate(
+        columns=(
+            ColumnSpan("label", 0.0, 0.4),
+            ColumnSpan("value", 0.5, 0.9),
+        ),
+        bbox=(0.0, 0.0, 1.0, 0.1),
+    )
+
+    # When page 2 rows have no explicit header row, carry forward prev_template
+    layout_p2 = assemble_page([
+        _word("Sodium", 0.1, 0.1),
+        _word("136", 0.1, 0.6),
+    ])
+    carried = carry_table_template(prev_template, layout_p2.rows)
+    assert carried == prev_template

@@ -10,7 +10,8 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
 $Venv = Join-Path $Root ".venv"
-$Python = Join-Path $Venv "Scripts\python.exe"
+$VenvPython = Join-Path $Venv "Scripts\python.exe"
+$Python = $VenvPython
 $Requirements = Join-Path $Root "requirements.txt"
 $RequirementsMarker = Join-Path $Venv ".smriti-requirements.sha256"
 
@@ -22,16 +23,48 @@ function Get-Npm {
     throw "Node.js and npm are required. Install Node 20.19+ or 22.12+."
 }
 
+function Invoke-Tool {
+    param([scriptblock]$Script)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        & $Script
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
 if (-not (Test-Path $Python)) {
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if ($uv) {
-        & uv venv .venv --python 3.11 *> $null
+        Invoke-Tool { & uv venv .venv --python 3.11 *> $null }
     } elseif (Get-Command py -ErrorAction SilentlyContinue) {
-        & py -3.11 -m venv .venv *> $null
+        Invoke-Tool { & py -3.11 -m venv .venv *> $null }
     } else {
-        & python -m venv .venv *> $null
+        Invoke-Tool { & python -m venv .venv *> $null }
     }
     if ($LASTEXITCODE -ne 0) { throw "Environment setup failed." }
+}
+
+# Resolve and verify functional Python executable
+if (Test-Path (Join-Path $Venv "pyvenv.cfg")) {
+    $homeLine = Get-Content (Join-Path $Venv "pyvenv.cfg") | Where-Object { $_ -match '^home\s*=\s*(.+)$' }
+    if ($homeLine -and $Matches[1]) {
+        $baseHome = $Matches[1].Trim()
+        $basePython = Join-Path $baseHome "python.exe"
+        $venvWorks = $false
+        try {
+            $null = & $Python -c "import ssl, uvicorn" 2>$null
+            if ($LASTEXITCODE -eq 0) { $venvWorks = $true }
+        } catch {
+            $venvWorks = $false
+        }
+        if (-not $venvWorks -and (Test-Path $basePython)) {
+            $Python = $basePython
+            $sitePackages = Join-Path $Venv "Lib\site-packages"
+            $env:PYTHONPATH = if ($env:PYTHONPATH) { "$Root;$sitePackages;$($env:PYTHONPATH)" } else { "$Root;$sitePackages" }
+        }
+    }
 }
 
 if (-not (Test-Path $Python)) {
@@ -48,14 +81,14 @@ if ($wanted -ne $installed) {
     Write-Host "Installing Python dependencies..."
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if ($uv) {
-        & uv pip install --python $Python -r $Requirements *> $null
+        Invoke-Tool { & uv pip install --quiet --python $VenvPython -r $Requirements *> $null }
         if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
     } else {
-        & $Python -m ensurepip --upgrade *> $null
+        Invoke-Tool { & $Python -m ensurepip --upgrade *> $null }
         if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
-        & $Python -m pip install --upgrade pip *> $null
+        Invoke-Tool { & $Python -m pip install --quiet --upgrade pip *> $null }
         if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
-        & $Python -m pip install -r $Requirements *> $null
+        Invoke-Tool { & $Python -m pip install --quiet -r $Requirements *> $null }
         if ($LASTEXITCODE -ne 0) { throw "Dependency setup failed." }
     }
     Set-Content -Path $RequirementsMarker -Value $wanted -NoNewline
@@ -75,9 +108,9 @@ if (-not $needsInstall -and (Test-Path $PackageLock)) {
 if ($needsInstall) {
     Write-Host "Installing frontend dependencies..."
     if (Test-Path $PackageLock) {
-        & $Npm --prefix web ci *> $null
+        Invoke-Tool { & $Npm --prefix web ci *> $null }
     } else {
-        & $Npm --prefix web install *> $null
+        Invoke-Tool { & $Npm --prefix web install *> $null }
     }
     if ($LASTEXITCODE -ne 0) { throw "Frontend setup failed." }
 }
@@ -98,7 +131,7 @@ if (-not $needsBuild) {
 }
 if ($needsBuild) {
     Write-Host "Building the web app..."
-    & $Npm --prefix web run build *> $null
+    Invoke-Tool { & $Npm --prefix web run build *> $null }
     if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
 }
 

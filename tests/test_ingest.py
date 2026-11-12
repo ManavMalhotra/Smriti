@@ -144,9 +144,11 @@ def test_capture_type_is_derived_server_side(client, app):
         client,
         patient_id,
         jpeg_bytes(handwritten_image()),
-        capture_type="printed",  # must be ignored
+        capture_type="printed",  # untrusted fields are rejected by bounded multipart intake
     )
     assert printed.status_code == 202
+    assert handwritten.status_code == 400
+    handwritten = upload(client, patient_id, jpeg_bytes(handwritten_image()))
     assert handwritten.status_code == 202
 
     printed_doc = _row(
@@ -163,30 +165,20 @@ def test_capture_type_is_derived_server_side(client, app):
     assert handwritten_doc[0] == "handwritten"
 
 
-def test_low_resolution_is_rejected_without_a_job(client, app, settings):
+def test_low_resolution_is_deferred_and_rejected_without_a_document(client, app, settings):
     patient_id = make_patient(client)
     image = text_image(width=600, height=800, lines=8, font_size=14, line_gap=30)
     response = upload(client, patient_id, jpeg_bytes(image))
-    assert response.status_code == 422
-
-    error = response.json()["error"]
-    assert error["code"] == "quality_rejected"
-    assert "Short edge" in error["message"]
-
-    document = _row(
-        app,
-        "SELECT id, status, page_count, quality_json FROM document "
-        "ORDER BY created_at DESC LIMIT 1",
-    )
-    assert document[1] == "rejected_quality"
-    assert document[2] == 1
-    assert json.loads(document[3])["pages"][0]["failure"]
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    rejected = client.get(f"/api/jobs/{job_id}").json()
+    assert rejected["state"] == "failed" and rejected["error_code"] == "rejected_quality"
+    assert rejected["document_id"] is rejected["total_pages"] is None
+    assert _count(app, "SELECT COUNT(*) FROM document") == 0
     assert _count(app, "SELECT COUNT(*) FROM jobs") == 0
 
-    image_path = _row(
-        app, "SELECT image_path FROM document WHERE id = :id", {"id": document[0]}
-    )[0]
-    assert not (settings.upload_dir / image_path).exists()
+    assert not (settings.upload_dir / job_id).exists()
+    assert not list(settings.spool_dir.glob("*.raw"))
 
 
 def test_unsupported_file_type_is_rejected(client, app):
@@ -234,13 +226,16 @@ def test_document_page_and_job_endpoints(client, app):
 
     job = client.get(f"/api/jobs/{job_id}")
     assert job.status_code == 200
-    assert job.json() == {
+    assert {key: job.json()[key] for key in ("id", "state", "page", "total", "error")} == {
         "id": job_id,
         "state": "queued",
         "page": 0,
         "total": 1,
         "error": None,
     }
+    assert [event["event"] for event in job.json()["events"]] == ["intake_accepted", "preparing", "prepared"]
+    assert job.json()["started_at"] is not None
+    assert job.json()["stage"] == "queued"
 
 
 def test_consent_endpoint_updates_scope_and_audits(client, app):

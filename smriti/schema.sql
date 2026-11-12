@@ -24,6 +24,8 @@ CREATE TABLE document (
                          'discharge_summary', 'ct', 'mri', 'xray',
                          'pathology', 'radiology', 'other'
                      )),
+    display_name     TEXT,
+    verified_date   TEXT,
     capture_type     TEXT NOT NULL CHECK (capture_type IN ('printed', 'handwritten')),
     doc_date         TEXT,
     collection_date  TEXT,
@@ -104,6 +106,7 @@ CREATE TABLE observation (
                        'diagnosis', 'recommendation', 'note', 'other'
                    )),
     evidence_quote TEXT,
+    clinical_json  TEXT,
     created_at     TEXT NOT NULL,
     CHECK (status <> 'auto' OR (analyte_id IS NOT NULL AND value_num IS NOT NULL) OR value_text IS NOT NULL)
 );
@@ -137,7 +140,11 @@ CREATE TABLE medication (
     start_date     TEXT,
     status         TEXT NOT NULL CHECK (status IN ('prescribed', 'reported_stopped', 'reported_ongoing')),
     reported_at    TEXT,
-    source_doc_id  TEXT REFERENCES document(id) ON DELETE SET NULL
+    source_doc_id  TEXT REFERENCES document(id) ON DELETE SET NULL,
+    clinical_json  TEXT,
+    page           INTEGER,
+    bbox_json      TEXT,
+    engine         TEXT
 );
 
 CREATE TABLE handwriting_field (
@@ -408,7 +415,14 @@ BEGIN
     SELECT RAISE(ABORT, 'SI-02: no numeric laboratory value from a handwritten document');
 END;
 
-PRAGMA user_version = 12;
+CREATE TABLE cloud_consent (
+    document_id TEXT PRIMARY KEY REFERENCES document(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('awaiting', 'approved', 'declined', 'processing', 'completed', 'failed')),
+    extra_boxes_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL
+);
+
+PRAGMA user_version = 14;
 
 COMMIT;
 

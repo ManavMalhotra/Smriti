@@ -31,9 +31,12 @@ _MONTHS = {
     "dec": 12,
     "december": 12,
 }
-_ISO = re.compile(r"\b(\d{4})[/-](\d{2})[/-](\d{2})\b")
-_NUMERIC = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b")
+_ISO = re.compile(r"\b(\d{4})[/.-](\d{2})[/.-](\d{2})\b")
+_NUMERIC = re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b")
 _WORDS = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b")
+_DAY_MONTH_YEAR = re.compile(
+    r"\b(\d{1,2})[/.-]([A-Za-z]{3,9})[/.-](\d{2,4})(?=\d{1,2}:\d{2}|[^0-9]|$)"
+)
 _SKIP = re.compile(r"\b(?:dob|date\s+of\s+birth|birth)\b", re.IGNORECASE)
 _LABELS = (
     (
@@ -91,20 +94,30 @@ def _date_in(text: str) -> date | None:
         parsed = _numeric_date(*match.groups())
         if parsed:
             return parsed
-    match = _WORDS.search(text)
-    if match:
-        month = _MONTHS.get(match.group(2).lower())
-        if month:
-            try:
-                return date(int(match.group(3)), month, int(match.group(1)))
-            except ValueError:
-                pass
+    for pattern in (_WORDS, _DAY_MONTH_YEAR):
+        match = pattern.search(text)
+        if match:
+            month = _MONTHS.get(match.group(2).lower())
+            if month:
+                try:
+                    year = int(match.group(3))
+                    if year < 100:
+                        year += 2000
+                    return date(year, month, int(match.group(1)))
+                except ValueError:
+                    pass
     return None
 
 
 def parse_date(text: str) -> date | None:
-    """Parse the first date-like value, using the same day-first rule as intake."""
-    return _date_in(text)
+    """Parse the first date-like value, ignoring date-of-birth lines."""
+    for line in text.splitlines():
+        if _SKIP.search(line):
+            continue
+        parsed = _date_in(line)
+        if parsed:
+            return parsed
+    return _date_in("\n".join(line for line in text.splitlines() if not _SKIP.search(line)))
 
 
 def extract_document_dates(text: str) -> dict[str, str]:
@@ -135,7 +148,7 @@ _UHID_PATTERNS = [
         re.I,
     ),
     re.compile(
-        r"\bpatient\s*reg(?:n)?\.?\s*(?:no\.?)?\s*[:.\-]?\s*([A-Za-z0-9/\-_]{4,30})\b",
+        r"\bpatient\s*reg(?:n)?\.?\s*(?:no\.?)?\s*[:.\-]\s*([A-Za-z0-9/\-_]{4,30})\b",
         re.I,
     ),
 ]
@@ -157,7 +170,7 @@ _DOCTOR_REG_PATTERN = re.compile(
 )
 
 _FACILITY_PATTERNS = re.compile(
-    r"\b(hospital|medical\s+college|diagnostics?|laborator(?:y|ies)|clinic|healthcare|institute\s+of\s+medical\s+sciences)\b",
+    r"(hospital|medical\s+college|diagnostics?|laborator(?:y|ies)|clinic|healthcare|institute\s+of\s+medical\s+sciences)",
     re.I,
 )
 
@@ -219,3 +232,23 @@ def extract_metadata(text: str) -> dict[str, str | None]:
         "doctor_reg_no": identifiers.get("doctor_reg_no"),
         "facility_name": identifiers.get("facility_name"),
     }
+
+
+def extract_metadata_lines(lines) -> dict[str, str | None]:
+    """Same document-wide precedence and first-eight-line facility rule, with bounded line reads."""
+    dates = {}
+    identifiers = {"patient_uhid": None, "doctor_reg_no": None, "facility_name": None}
+    for index, line in enumerate(lines):
+        if not _SKIP.search(line):
+            for field, label in _LABELS:
+                if field not in dates and label.search(line):
+                    parsed = _date_in(line)
+                    if parsed:
+                        dates[field] = parsed.isoformat()
+                        break
+        found = extract_document_identifiers(line)
+        for key in identifiers:
+            if identifiers[key] is None and (key != "facility_name" or index < 8):
+                identifiers[key] = found[key]
+    dates.setdefault("doc_date", dates.get("collection_date") or dates.get("registration_date") or dates.get("report_date"))
+    return {key: dates.get(key) for key in ("doc_date", "collection_date", "registration_date", "report_date")} | identifiers

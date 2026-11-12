@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from smriti.analytes import Analyte, analytes
 from smriti.assembly import (
@@ -26,6 +26,10 @@ _NUMBER = re.compile(r"(?<![A-Za-z0-9.-])([<>]?)\s*(-?\d+(?:,\d+)*(?:\.\d+)?)")
 _RANGE = re.compile(
     r"(?<![\d.])(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:,\d+)*(?:\.\d+)?)"
 )
+_SINGLE_RANGE = re.compile(
+    r"(?<![A-Za-z0-9.-])([<>≤≥])\s*(-?\d+(?:,\d+)*(?:\.\d+)?)"
+)
+_DATE_VALUE = re.compile(r"\b\d{1,4}[/.-](?:\d{1,2}|[A-Za-z]{3,9})[/.-]\d{2,4}\b")
 _FLAG = re.compile(r"\b(high|low|h|l|abnormal)\b", re.IGNORECASE)
 _MED_FREQ = (
     r"od|bd|tds|qid|hs|sos|prn|once\s+daily|twice\s+daily|"
@@ -48,6 +52,10 @@ _NON_RESULT_WORDS = (
     "phone",
     "mobile",
     "address",
+    "plot",
+    "street",
+    "sector",
+    "pincode",
     "bill",
     "invoice",
     "barcode",
@@ -74,6 +82,31 @@ _NON_RESULT_WORDS = (
     "history",
     "advice",
     "note",
+    "method",
+    "machine",
+    "instrument",
+    "analyzer",
+    "technique",
+    "kit",
+)
+
+_METADATA_LINE = re.compile(
+    r"^(?:method|machine|instrument|analyzer|technique|kit)\s*[:.]",
+    re.IGNORECASE,
+)
+_REF_HEADER_LINE = re.compile(
+    r"^(?:reference\s*range|bio(?:logical)?\s*ref(?:erence)?\s*interval|"
+    r"test\s*description|interpretation|desirable\s*:|borderline\s*:|"
+    r"very\s*high\s*:|high\s*:|low\s*:)\b",
+    re.IGNORECASE,
+)
+_PROSE_INDICATORS = re.compile(
+    r"\b(?:is|are|was|were|can|that|which|such\s+as|in\s+the|of\s+the|associated\s+with|recommended|recommends)\b",
+    re.IGNORECASE,
+)
+_SIGNATURE_END = re.compile(
+    r"\b(dr\.?\s+[a-z]|mbbs|m\.?d\.?|dnb|consultant|pathologist|biochemist|signature|end\s*of\s*report)\b",
+    re.IGNORECASE,
 )
 
 
@@ -93,6 +126,8 @@ class ExtractedField:
     mapping_rule: str
     engine: str = str(LOCAL_RULES)
     reason: str | None = None
+    evidence_quote: str | None = None
+    clinical_metadata: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +136,10 @@ class ExtractedMedication:
     dose: str | None
     freq: str | None
     confidence: float
+    page: int | None = None
+    bbox: list[float] | None = None
+    engine: str | None = None
+    clinical_metadata: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -136,8 +175,32 @@ def _confidence(words: list[OcrWord]) -> float:
 
 def _analyte_matches(text: str) -> list[tuple[int, int, Analyte, str]]:
     lowered = text.lower()
+    is_ratio = bool(re.search(r"\b(?:ratio|index)\b", lowered))
+    has_mch = bool(re.search(r"\b(?:mean\s+corp|mch|mchc|corpuscular)\b", lowered))
+    has_fractional_bili = bool(
+        re.search(r"\b(?:direct|conjugated|indirect|unconjugated)\b", lowered)
+    )
+    has_bun = bool(re.search(r"\b(?:nitrogen|bun)\b", lowered))
+
     found: list[tuple[int, int, Analyte, str]] = []
     for analyte in analytes():
+        if is_ratio and analyte.id in {
+            "creatinine",
+            "urea",
+            "albumin",
+            "ast",
+            "alt",
+            "platelets",
+            "wbc",
+        }:
+            continue
+        if has_mch and analyte.id == "hemoglobin":
+            continue
+        if has_fractional_bili and analyte.id == "bilirubin_total":
+            continue
+        if has_bun and analyte.id == "urea":
+            continue
+
         for synonym in analyte.synonyms:
             for match in re.finditer(
                 rf"(?<![a-z0-9]){re.escape(synonym)}(?![a-z0-9])", lowered
@@ -159,6 +222,12 @@ def _parse_value(text: str) -> tuple[str, str | None, str | None] | None:
     match = _NUMBER.search(text)
     if not match:
         return None
+    range_match = _RANGE.search(text)
+    if range_match and match.end() > range_match.start():
+        return None
+    date_match = _DATE_VALUE.search(text)
+    if date_match and date_match.start() <= match.end() <= date_match.end():
+        return None
     prefix, number = match.groups()
     unit = _UNIT.search(text[match.end() :])
     value_text = f"{prefix}{_canonical_number(number)}"
@@ -167,9 +236,17 @@ def _parse_value(text: str) -> tuple[str, str | None, str | None] | None:
 
 def _parse_range(text: str) -> tuple[str | None, str | None]:
     match = _RANGE.search(text)
-    if not match:
-        return None, None
-    return _canonical_number(match.group(1)), _canonical_number(match.group(2))
+    if match:
+        return _canonical_number(match.group(1)), _canonical_number(match.group(2))
+    single = _SINGLE_RANGE.search(text)
+    if single:
+        op, val = single.groups()
+        canonical = _canonical_number(val)
+        if op in ("<", "≤"):
+            return None, canonical
+        if op in (">", "≥"):
+            return canonical, None
+    return None, None
 
 
 def _printed_flag(text: str) -> str | None:
@@ -185,9 +262,17 @@ def _printed_flag(text: str) -> str | None:
 
 
 def _bbox_for_value(words: list[OcrWord], value: str) -> list[float]:
-    clean_val = value.replace(",", "")
-    for word in words:
-        clean_word = word.text.replace(",", "")
+    clean_val = value.replace(",", "").strip()
+    for word in reversed(words):
+        clean_word = word.text.replace(",", "").strip()
+        if clean_val == clean_word:
+            return word.bbox
+    for word in reversed(words):
+        clean_word = word.text.replace(",", "").strip().rstrip(".:-;")
+        if clean_val == clean_word:
+            return word.bbox
+    for word in reversed(words):
+        clean_word = word.text.replace(",", "").strip()
         if clean_val in clean_word or clean_val.replace(".", "") in clean_word.replace(".", ""):
             return word.bbox
     return _line_bbox(words)
@@ -220,7 +305,20 @@ def _extract_line(
     engine: str,
     template: TableTemplate | None = None,
 ) -> list[ExtractedField]:
-    text = " ".join(word.text for word in words)
+    text = " ".join(word.text for word in words).strip()
+    lowered = text.lower()
+
+    if (
+        _METADATA_LINE.search(text)
+        or _REF_HEADER_LINE.search(text)
+        or (_PROSE_INDICATORS.search(text) and not _parse_range(text)[0])
+    ):
+        return []
+    if any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in _NON_RESULT_WORDS):
+        return []
+    if len(text) > 70 and not _parse_range(text)[0]:
+        return []
+
     matches = _analyte_matches(text)
     fields: list[ExtractedField] = []
     if matches:
@@ -228,7 +326,7 @@ def _extract_line(
             next_start = matches[index + 1][0] if index + 1 < len(matches) else len(text)
             tail = text[end:next_start]
             parsed = _parse_value(tail)
-            if parsed is None:
+            if parsed is None or parsed[0] is None:
                 continue
             value_num, value_text, unit = parsed
             ref_low, ref_high = _parse_range(tail)
@@ -303,21 +401,22 @@ def _extract_line(
                     )
                     return fields
 
-    lowered = text.lower()
-    if any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in _NON_RESULT_WORDS):
+    num_match = _NUMBER.search(text)
+    if not num_match or num_match.start() <= 1:
         return fields
-    label = text.strip(" :-")
-    if len(label) < 3:
+    prefix = text[:num_match.start()].strip(" :-,")
+    if not (2 <= len(prefix) <= 50 and re.match(r"^[A-Za-z]", prefix)):
         return fields
-    parsed = _parse_value(text)
+    if any(re.search(rf"\b{re.escape(word)}\b", prefix.lower()) for word in _NON_RESULT_WORDS):
+        return fields
+    if _PROSE_INDICATORS.search(prefix):
+        return fields
+    parsed = _parse_value(text[num_match.start():])
     if parsed is None or parsed[0] is None:
         return fields
     value_num, value_text, unit = parsed
-    label_match = re.match(r"^[A-Za-z][A-Za-z0-9 ()\-/%.,']{2,60}", label)
-    if not label_match:
-        return fields
-    label_raw = label_match.group(0).strip()
-    ref_low, ref_high = _parse_range(text)
+    ref_low, ref_high = _parse_range(text[num_match.start():])
+    label_raw = prefix
     reason = _evaluate_field_reason(
         None, value_text, value_num, label_raw, "unresolved"
     )
@@ -362,6 +461,9 @@ def _extract_medications(words: list[OcrWord]) -> list[ExtractedMedication]:
                 confidence=_confidence(words),
             )
         )
+    if medications and re.search(r"\bOR\b", text, re.I):
+        # Keep alternatives together; splitting this line would imply two scheduled medicines.
+        return [ExtractedMedication(text.strip(), None, None, _confidence(words))]
     return medications
 
 
@@ -377,17 +479,28 @@ def extract_document(
     carried_template: TableTemplate | None = None
 
     for page_number, words in enumerate(pages, start=1):
+        from smriti.classify import is_boilerplate
+        if is_boilerplate(" ".join(word.text for word in words)):
+            carried_template = None
+            continue
         layout = assemble_page(words)
         page_header = find_table_header(layout.rows)
         if page_header is not None:
             carried_template = page_header
 
+        in_table = page_header is None
         for row in layout.rows:
-            # Skip the table header row itself from becoming a test field
             if page_header is not None and row.bbox == page_header.bbox:
+                in_table = True
+                continue
+            if not in_table:
                 continue
 
             line = list(row.words)
+            line_text = " ".join(w.text for w in line).strip()
+            if row.bbox[1] > 0.35 and _SIGNATURE_END.search(line_text):
+                break
+
             if capture_type == "printed" and doc_type in (
                 "lab_report",
                 "other",
@@ -402,7 +515,8 @@ def extract_document(
                 "other",
                 "discharge_summary",
             ):
-                medications.extend(_extract_medications(line))
+                medications.extend(replace(med, page=page_number, bbox=row.bbox, engine=engine)
+                                   for med in _extract_medications(line))
     # Keep one field per analyte per printed line; OCR often repeats a label.
     unique: dict[tuple[str, str, int], ExtractedField] = {}
     for field in fields:
@@ -414,3 +528,34 @@ def extract_document(
             (medication.brand_raw.lower(), medication.dose, medication.freq), medication
         )
     return Extraction(list(unique.values()), list(unique_meds.values()))
+
+
+def extraction_candidates(page_words, doc_type, capture_type, *, engine=str(LOCAL_RULES)):
+    """One page's layout at a time; scratch handles document-wide first-seen deduplication."""
+    carried_template = None
+    for page_number, words in enumerate(page_words, start=1):
+        from smriti.classify import is_boilerplate
+        if is_boilerplate(" ".join(word.text for word in words)):
+            carried_template = None
+            continue
+        layout = assemble_page(words)
+        page_header = find_table_header(layout.rows)
+        if page_header is not None:
+            carried_template = page_header
+        in_table = page_header is None
+        for row in layout.rows:
+            if page_header is not None and row.bbox == page_header.bbox:
+                in_table = True
+                continue
+            if not in_table:
+                continue
+            line = list(row.words)
+            if row.bbox[1] > 0.35 and _SIGNATURE_END.search(" ".join(w.text for w in line).strip()):
+                break
+            if capture_type == "printed" and doc_type in ("lab_report", "other", "discharge_summary"):
+                for field in _extract_line(line, page_number, engine, template=carried_template):
+                    yield "field", field
+            if capture_type == "printed" and doc_type in ("prescription", "pharmacy", "other", "discharge_summary"):
+                for medication in _extract_medications(line):
+                    yield "medication", replace(medication, page=page_number, bbox=row.bbox, engine=engine)
+        del layout, words

@@ -246,3 +246,103 @@ def check_anc(
             f"G5: ANC ({anc}) differs from WBC * neutrophil% ({calculated:.1f})",
         )
     return "pass", None
+
+
+def exact_numeric_second_read(
+    primary_value: str, second_value: str
+) -> tuple[bool, str | None]:
+    """Exact numeric second read without tolerance.
+
+    Both readings must match digit-for-digit, including decimal places and signs.
+    """
+    p_clean = primary_value.strip().lstrip("<>").replace(",", "")
+    s_clean = second_value.strip().lstrip("<>").replace(",", "")
+
+    if not p_clean or not s_clean:
+        return False, f"Empty reading: primary='{primary_value}', second='{second_value}'"
+
+    try:
+        p_num = float(p_clean)
+        s_num = float(s_clean)
+    except ValueError:
+        return False, f"Non-numeric reading: primary='{primary_value}', second='{second_value}'"
+
+    # Exact equality without 5% tolerance
+    if p_clean != s_clean and abs(p_num - s_num) > 1e-9:
+        return False, f"Second read mismatch: primary '{primary_value}' != second '{second_value}'"
+
+    return True, None
+
+
+def validate_date_window(
+    test_date_str: str,
+    doa_str: str | None,
+    dod_str: str | None,
+) -> tuple[bool, str | None]:
+    """Verify that a test/observation date falls within the admission window [DOA, DOD]."""
+    from datetime import date
+    from smriti.metadata import parse_date
+
+    test_d = parse_date(test_date_str)
+    if test_d is None:
+        return True, None  # Cannot validate unparseable date format
+
+    doa_d = parse_date(doa_str) if doa_str else None
+    dod_d = parse_date(dod_str) if dod_str else None
+
+    if doa_d is not None and test_d < doa_d:
+        return False, f"Date out of window: test date {test_d} precedes DOA {doa_d}"
+
+    if dod_d is not None and test_d > dod_d:
+        return False, f"Date out of window: test date {test_d} succeeds DOD {dod_d}"
+
+    return True, None
+
+
+def validate_patient_identity(
+    claimed_uhid: str | None,
+    profile_uhid: str | None,
+    claimed_name: str | None = None,
+    profile_name: str | None = None,
+) -> tuple[bool, str | None]:
+    """Verify extracted identity against patient record."""
+    if claimed_uhid and profile_uhid:
+        c_clean = re.sub(r"[^\w]", "", claimed_uhid).lower()
+        p_clean = re.sub(r"[^\w]", "", profile_uhid).lower()
+        if c_clean != p_clean:
+            return False, f"UHID mismatch: claimed '{claimed_uhid}' != profile '{profile_uhid}'"
+
+    if claimed_name and profile_name:
+        c_name = re.sub(r"[^\w\s]", "", claimed_name).lower().split()
+        p_name = re.sub(r"[^\w\s]", "", profile_name).lower().split()
+        if not set(c_name).intersection(set(p_name)):
+            return False, f"Name mismatch: claimed '{claimed_name}' != profile '{profile_name}'"
+
+    return True, None
+
+
+def generate_orphan_token_report(
+    page_words,
+    claimed_bboxes: list[list[float]],
+) -> dict:
+    """Identify page tokens that were never claimed by any table cell or prose section."""
+    orphan_tokens = []
+    for word in page_words:
+        wx0, wy0, wx1, wy1 = word.bbox
+        claimed = False
+        for bx0, by0, bx1, by1 in claimed_bboxes:
+            # Overlap check
+            if not (wx1 < bx0 or wx0 > bx1 or wy1 < by0 or wy0 > by1):
+                claimed = True
+                break
+        if not claimed:
+            orphan_tokens.append(word.text)
+
+    total = len(page_words)
+    return {
+        "total_tokens": total,
+        "claimed_tokens": total - len(orphan_tokens),
+        "orphan_count": len(orphan_tokens),
+        "orphan_ratio": len(orphan_tokens) / max(1, total),
+        "orphan_tokens": orphan_tokens,
+    }

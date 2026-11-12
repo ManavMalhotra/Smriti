@@ -25,6 +25,13 @@ def _decimal_string(raw: str) -> str:
         api_error(400, "validation_error", "Value must be finite.", field="value_num")
     if value == 0:
         return "0"
+    if not -12 <= value.adjusted() <= 12 or len(value.as_tuple().digits) > 15:
+        api_error(
+            400,
+            "validation_error",
+            "Value is outside the range a lab result can have.",
+            field="value_num",
+        )
     canonical = format(value.normalize(), "f")
     return "0" if canonical in ("-0", "") else canonical
 
@@ -44,8 +51,12 @@ def _observation(row) -> dict:
     return {
         "id": mapping["id"],
         "document_id": mapping["document_id"],
+        "report_id": mapping.get("report_id"),
         "analyte_id": mapping["analyte_id"],
         "label_raw": mapping["label_raw"],
+        "label_norm": mapping.get("label_norm"),
+        "fact_type": mapping.get("fact_type"),
+        "evidence_quote": mapping.get("evidence_quote"),
         "value_num": mapping["value_num"],
         "value_text": mapping["value_text"],
         "unit_raw": mapping["unit_raw"],
@@ -79,7 +90,8 @@ def review_observation(
         row = conn.execute(
             text(
                 """
-                SELECT o.id, o.document_id, o.analyte_id, o.label_raw, o.value_num,
+                SELECT o.id, o.document_id, o.report_id, o.analyte_id, o.label_raw,
+                       o.label_norm, o.fact_type, o.evidence_quote, o.value_num,
                        o.value_text, o.unit_raw, o.unit_norm, o.ref_low, o.ref_high,
                        o.flag_printed, o.bbox_json, o.page, o.engine, o.confidence,
                        o.status, o.reason, o.mapping_rule, o.created_at,
@@ -106,13 +118,15 @@ def review_observation(
         actor = patient["username"] or patient["alias"]
         old_status = mapping["status"]
         old_value = mapping["value_num"]
+        old_text = mapping["value_text"]
         old_unit = mapping["unit_norm"]
+        analyte_id = payload.analyte_id.strip() if payload.analyte_id else mapping["analyte_id"]
         value_num = old_value
-        value_text = mapping["value_text"]
+        value_text = old_text
         unit_norm = old_unit
 
         if payload.action == "accept":
-            if mapping["value_num"] is not None and mapping["analyte_id"] is None:
+            if mapping["value_num"] is not None and analyte_id is None:
                 api_error(409, "unmapped", "Map this field before accepting it.")
             if mapping["value_num"] is None and mapping["value_text"] is None:
                 api_error(409, "missing_value", "This field has no value.")
@@ -121,12 +135,27 @@ def review_observation(
             if payload.unit_norm:
                 unit_norm = payload.unit_norm.strip()
         elif payload.action == "correct":
-            if mapping["value_num"] is not None and mapping["analyte_id"] is None:
-                api_error(409, "unmapped", "Map this field before correcting it.")
-            if payload.value_num is None:
-                api_error(400, "validation_error", "A corrected value is required.", field="value_num")
-            value_num = _decimal_string(payload.value_num)
-            value_text = value_num
+            if mapping["value_num"] is not None:
+                if analyte_id is None:
+                    api_error(409, "unmapped", "Map this field before correcting it.")
+                if payload.value_num is None:
+                    api_error(
+                        400,
+                        "validation_error",
+                        "A corrected value is required.",
+                        field="value_num",
+                    )
+                value_num = _decimal_string(payload.value_num)
+                value_text = value_num
+            else:
+                if payload.value_text is None or not payload.value_text.strip():
+                    api_error(
+                        400,
+                        "validation_error",
+                        "A corrected text value is required.",
+                        field="value_text",
+                    )
+                value_text = payload.value_text.strip()
             status = "auto"
             reason = "Corrected during review."
             if payload.unit_norm is not None:
@@ -140,7 +169,7 @@ def review_observation(
                 """
                 UPDATE observation
                 SET status = :status, value_num = :value_num, value_text = :value_text,
-                    unit_norm = :unit_norm, reason = :reason
+                    unit_norm = :unit_norm, reason = :reason, analyte_id = :analyte_id
                 WHERE id = :id
                 """
             ),
@@ -150,9 +179,20 @@ def review_observation(
                 "value_text": value_text,
                 "unit_norm": unit_norm,
                 "reason": reason,
+                "analyte_id": analyte_id,
                 "id": observation_id,
             },
         )
+        if analyte_id != mapping["analyte_id"]:
+            audit(
+                conn,
+                entity="observation",
+                entity_id=observation_id,
+                field="analyte_id",
+                old=mapping["analyte_id"],
+                new=analyte_id,
+                actor=actor,
+            )
         audit(
             conn,
             entity="observation",
@@ -172,6 +212,16 @@ def review_observation(
                 new=value_num,
                 actor=actor,
             )
+        if value_text != old_text:
+            audit(
+                conn,
+                entity="observation",
+                entity_id=observation_id,
+                field="value_text",
+                old=old_text,
+                new=value_text,
+                actor=actor,
+            )
         if unit_norm != old_unit:
             audit(
                 conn,
@@ -186,9 +236,10 @@ def review_observation(
         updated = conn.execute(
             text(
                 """
-                SELECT id, document_id, analyte_id, label_raw, value_num, value_text,
-                       unit_raw, unit_norm, ref_low, ref_high, flag_printed, bbox_json,
-                       page, engine, confidence, status, reason, mapping_rule, created_at
+                SELECT id, document_id, report_id, analyte_id, label_raw, label_norm,
+                       fact_type, evidence_quote, value_num, value_text, unit_raw,
+                       unit_norm, ref_low, ref_high, flag_printed, bbox_json, page,
+                       engine, confidence, status, reason, mapping_rule, created_at
                 FROM observation WHERE id = :id
                 """
             ),

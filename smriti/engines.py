@@ -21,6 +21,7 @@ class EngineInfo:
 
 
 LOCAL_RULES = EngineInfo("local-rules", "line-rules", "1.0")
+GEMINI_FLASH_HIGH = "gemini-3.8-flash-high"
 
 
 def field_engine(ocr_name: str | None) -> str:

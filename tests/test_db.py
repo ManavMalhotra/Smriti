@@ -392,7 +392,14 @@ def test_v8_progress_migration_preserves_accounts_and_review(tmp_path, version):
         assert conn.execute("SELECT state, progress_json FROM jobs WHERE id = 'j1'").fetchone() == ("done", None)
         for table, rows in before.items():
             assert conn.execute(f"SELECT {columns[table]} FROM {table}").fetchall() == rows
-        assert conn.execute("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('jobs', 'submissions', 'stage_batches') ORDER BY name").fetchall() == old_schema
+        import re
+        after_schema = conn.execute("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('jobs', 'submissions', 'stage_batches') ORDER BY name").fetchall()
+        # Only the approved clinical columns and consent table may differ; all old constraints stay frozen.
+        unchanged = [(kind, name, re.sub(r",\s*(?:clinical_json TEXT|page INTEGER|bbox_json TEXT|engine TEXT)(?=[,)])", "", sql)
+                      if kind == "table" and name in {"observation", "medication"} else sql)
+                     for kind, name, sql in after_schema if name != "cloud_consent"]
+        assert unchanged == old_schema
+        assert {row[1] for row in conn.execute("PRAGMA table_info(medication)")} >= {"clinical_json", "page", "bbox_json", "engine"}
         assert conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM stage_batches").fetchone()[0] == 0
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

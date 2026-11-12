@@ -9,7 +9,7 @@ from sqlalchemy import text
 from smriti.directives import extract_directives
 from smriti.models import AnchorEvent
 from smriti.ocr import OcrWord
-from smriti.worker import process_next
+from tests.staged_runtime import run_batch, prepare_response
 from tests.factory import jpeg_bytes, make_patient, text_image
 
 pytestmark = pytest.mark.integration
@@ -175,9 +175,9 @@ def test_worker_persists_directive_to_summary(client, app, settings):
         files={"file": ("page.jpg", jpeg_bytes(text_image()), "image/jpeg")},
     )
     assert uploaded.status_code == 202, uploaded.text
-    body = uploaded.json()
+    body = prepare_response(client, uploaded).json()
 
-    assert process_next(app.state.engine, settings, ocr_engine=_DirectiveOcr()) is True
+    assert run_batch(app.state.engine, settings, ocr_engine=_DirectiveOcr()) is True
     detail = client.get(f"/api/documents/{body['document_id']}").json()
     assert detail["doc_type"] == "prescription"
     assert len(detail["medications"]) == 1
@@ -199,13 +199,13 @@ def test_worker_does_not_persist_handwritten_directives(client, app, settings):
         files={"file": ("page.jpg", jpeg_bytes(text_image()), "image/jpeg")},
     )
     assert uploaded.status_code == 202, uploaded.text
-    document_id = uploaded.json()["document_id"]
+    document_id = prepare_response(client, uploaded).json()["document_id"]
     with app.state.engine.begin() as conn:
         conn.execute(
             text("UPDATE document SET capture_type = 'handwritten' WHERE id = :id"),
             {"id": document_id},
         )
 
-    assert process_next(app.state.engine, settings, ocr_engine=_DirectiveOcr()) is True
+    assert run_batch(app.state.engine, settings, ocr_engine=_DirectiveOcr()) is True
     summary = client.get(f"/api/patients/{patient_id}/summary").json()
     assert summary["pending"] == []

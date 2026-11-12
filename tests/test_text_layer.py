@@ -106,3 +106,23 @@ def test_saved_words_round_trip(tmp_path):
     path = words_path(tmp_path / "page_1.webp")
     save_words(path, words)
     assert load_words(path) == words
+    # Check bbox_1000 serialization
+    import json
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["source"] == "text_layer"
+    assert data["words"][0]["bbox_1000"] == [100, 200, 300, 400]
+
+
+def test_suspicious_raster_verified_by_ocr():
+    # If full page image coverage is high but raster_verified is True, layer is usable
+    result = inspect(_grid(30), width=1.0, height=1.0, image_coverage=0.95, raster_verified=True)
+    assert result.usable
+    assert result.source == "text_layer"
+    assert result.metrics["reason"] is None
+
+
+def test_suspicious_raster_rejected_when_mismatched():
+    result = inspect(_grid(30), width=1.0, height=1.0, image_coverage=0.95, raster_verified=False)
+    assert not result.usable
+    assert result.source == "ocr"
+    assert "suspicious_raster_mismatch" in result.metrics["reason"]

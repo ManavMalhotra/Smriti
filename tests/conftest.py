@@ -54,12 +54,18 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         db_path=tmp_path / "smriti.db",
         upload_dir=tmp_path / "uploads",
+        spool_dir=tmp_path / "spool",
+        log_dir=tmp_path / "logs",
         worker_enabled=False,
+        vlm_enabled=False,
     )
 
 
 @pytest.fixture
-def app(settings: Settings):
+def app(settings: Settings, monkeypatch):
+    from tests.test_app_diagnostics import CaptureDiagnostics
+
+    monkeypatch.setattr("smriti.app.Diagnostics", CaptureDiagnostics)
     return create_app(settings)
 
 

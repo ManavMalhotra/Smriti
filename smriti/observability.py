@@ -67,6 +67,15 @@ _VOCABULARY = {
 }
 _NUMBERS = {"page", "total", "count", "window_start", "window_end", "window_index", "attempt", "sequence", "status", "duration_ms", "dropped", "failures", "rss_bytes", "private_bytes", "system_used_bytes", "vram_used_bytes", "vram_free_bytes", "samples", "missing", "before", "observed_peak", "after"}
 
+_VOCABULARY["stage"].add("awaiting_cloud_consent")
+_VOCABULARY["engine"].add("gemini-3.8-flash-high")
+_VOCABULARY["route"].add("/api/documents/{document_id}/redaction-preview")
+_VOCABULARY["route"].add("/api/jobs/{job_id}/retry")
+_VOCABULARY["route"].add("/api/patients/{patient_id}/clinical-summary")
+_VOCABULARY["route"].add("/api/patients/{patient_id}/clinical-summary/refresh")
+_VOCABULARY["route"].add("/api/patients/{patient_id}/cloud-consent")
+_VOCABULARY["route"].add("/api/system/gemini-status")
+
 
 def safe_engine(value):
     if not isinstance(value, str):

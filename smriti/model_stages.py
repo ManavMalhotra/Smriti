@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 import hashlib
 import time
+import base64
+import re
+import gc
+import uuid
 from dataclasses import asdict
 
 import psutil
@@ -16,6 +20,115 @@ from smriti.output_quota import bounded_bytes
 from smriti.preparation import _settings, page_metadata
 from smriti.processing_store import read_page, save_page, submission, validate_source, validate_words
 from smriti.spool import SpoolError
+
+
+def prepare_cloud_pages(engine, settings, row, scratch, doc_type):
+    """Keep a private local preview and editable mask proposals in quota-accounted scratch."""
+    if not settings.gemini_api_key or settings.demo:
+        return
+    from PIL import Image
+    from smriti.candidates import MaskReviewPage
+    from smriti.preprocess import discover_pii_tokens, encode_preview, propose_pii_masks, to_bgr
+
+    with engine.connect() as conn:
+        cloud_requested = conn.execute(text("""SELECT 1 FROM consent WHERE document_id = :id
+            AND scope = 'local_plus_projection' AND revoked_at IS NULL"""), {"id": row["document_id"]}).first()
+    if not cloud_requested:
+        return
+    tokens = set()
+    for page in range(1, row["page_count"] + 1):
+        data = read_page(settings, row, "ocr", page)
+        tokens.update(discover_pii_tokens(data["words"]))
+    for page in range(1, row["page_count"] + 1):
+        data = read_page(settings, row, "ocr", page)
+        validate_source(settings, row, page)
+        with Image.open(settings.upload_dir / row["image_path"] / f"page_{page}.webp") as image:
+            bgr = to_bgr(image)
+            masks = propose_pii_masks(data["words"], bgr.shape[1], bgr.shape[0], tokens, bgr)
+            jpeg = encode_preview(bgr)
+        scratch.add("redaction", MaskReviewPage(page, base64.b64encode(jpeg).decode(), hashlib.sha256(jpeg).hexdigest(), masks),
+                    dedup=page, match_key=str(page))
+        del bgr, jpeg
+        gc.collect()
+    if scratch.count("redaction"):
+        from smriti.spool import _now
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO cloud_consent (document_id, status, updated_at) VALUES (:id, 'awaiting', :now) ON CONFLICT DO NOTHING"),
+                         {"id": row["document_id"], "now": _now()})
+        _progress(engine, row["job_id"], "awaiting_cloud_consent")
+
+
+def extract_approved_cloud_pages(engine, settings, row, scratch):
+    from dataclasses import replace
+    from PIL import Image
+    from smriti.candidates import Candidate
+    from smriti.preprocess import apply_pii_masks, to_bgr
+    from smriti.spool import _now
+    from smriti.vlm import extract_window_with_gemini
+
+    with engine.begin() as conn:
+        consent = conn.execute(text("""SELECT cc.status, cc.extra_boxes_json FROM cloud_consent cc
+            JOIN consent c ON c.document_id = cc.document_id
+            WHERE cc.document_id = :id AND c.scope = 'local_plus_projection' AND c.revoked_at IS NULL"""), {"id": row["document_id"]}).first()
+        if not consent or consent[0] != "approved" or not settings.gemini_api_key or settings.demo:
+            return
+        # Claim before egress; interrupted calls are never automatically sent again.
+        claimed = conn.execute(text("""UPDATE cloud_consent SET status = 'processing', updated_at = :now
+            WHERE document_id = :id AND status = 'approved'"""),
+            {"id": row["document_id"], "now": _now()})
+        if claimed.rowcount != 1:
+            return
+    boxes = json.loads(consent[1])
+    failed = False
+    _progress(engine, row["job_id"], "cloud_reading", model="gemini-3.8-flash-high")
+    for offset in range(0, scratch.count("redaction"), settings.max_workset_pages):
+        submission(engine, row["job_id"])  # Recheck owner/local consent before each network window.
+        previews = list(scratch.range_rows("redaction", offset, settings.max_workset_pages))
+        images, pages = [], []
+        for preview in previews:
+            validate_source(settings, row, preview["page"])
+            jpeg = base64.b64decode(preview["jpeg_base64"], validate=True)
+            if hashlib.sha256(jpeg).hexdigest() != preview["sha256"]:
+                raise SpoolError("prepared_artifact_invalid")
+            with Image.open(settings.upload_dir / row["image_path"] / f"page_{preview['page']}.webp") as image:
+                jpeg = apply_pii_masks(to_bgr(image), boxes.get(str(preview["page"]), []), preview["page"])
+            images.append(jpeg)
+            pages.append(preview["page"])
+        digest = hashlib.sha256(b"".join(images)).hexdigest()
+        outcomes = []
+        fields = extract_window_with_gemini(images, pages, "", settings=settings, on_outcome=lambda *args: outcomes.append(args))
+        if outcomes:
+            last = outcomes[-1]
+            outcome = last[0] if len(last) > 0 else "failed"
+            reason = last[1] if len(last) > 1 else None
+        else:
+            outcome, reason = "failed", "unknown"
+        failed |= outcome == "failed"
+        with engine.begin() as conn:
+            conn.execute(text("""INSERT INTO egress (id, document_id, payload_sha256, model_id, prompt_version, schema_version, outcome, reason, ts)
+                VALUES (:id, :doc, :sha, :model, 'redacted-clinical@1', 'window@1', :outcome, :reason, :now)"""),
+                {"id": str(uuid.uuid4()), "doc": row["document_id"], "sha": digest, "model": settings.gemini_model_id,
+                 "outcome": outcome, "reason": reason, "now": _now()})
+        for field in fields:
+            metadata = field.clinical_metadata
+            key = (metadata["event_date"], field.label_raw.casefold(), field.value_text)
+            existing = scratch.deduplicated("cloud", key)
+            if existing:
+                anchors = existing["clinical_metadata"]["source_anchors"]
+                for anchor in metadata["source_anchors"]:
+                    if anchor not in anchors:
+                        anchors.append(anchor)
+                field = Candidate(**existing)
+            if row["capture_type"] == "handwritten" and field.value_num is not None:
+                field = replace(field, value_num=None, reason="Handwritten numerical lab value withheld; review source.")
+            scratch.add("cloud", field, dedup=key, match_key=field.analyte_id or field.label_raw.casefold(), replace=True)
+        del images, previews, fields
+        gc.collect()
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE cloud_consent SET status = :status, updated_at = :now WHERE document_id = :id"),
+                     {"id": row["document_id"], "status": "failed" if failed else "completed", "now": _now()})
+    if failed:
+        _progress(engine, row["job_id"], "cloud_failed")
 
 
 def _members(context, settings):
@@ -98,7 +211,10 @@ def ocr_target(context, report):
                               text=page_text, source=source, model_version=model, engine=page_engine)
                     _progress(engine, row["job_id"], "page_read", page=page, completed=page, total=row["page_count"],
                               model=model, count=len(words), duration=time.monotonic() - started)
+                    del words
+                    gc.collect()
                 report("page_finished", page=page, count=1)
+                gc.collect()
     except Exception as exc:
         if "member" in locals():
             exc.job_id = member["job_id"]
@@ -139,6 +255,34 @@ def qwen_target(context, report):
                     _progress(engine, row["job_id"], "qwen_unavailable_page" if cached.get("outcome") == "unavailable" else "qwen_page",
                               page=page, completed=completed, total=eligible, model=VLM_ENGINE_NAME)
                     continue
+                from smriti.classify import is_boilerplate
+                ocr_page = read_page(settings, row, "ocr", page)
+                if ocr_page is None:
+                    raise SpoolError("prepared_artifact_invalid")
+                metadata = page_metadata(settings, row["job_id"], page)
+                from smriti.handwriting import needs_page_review
+                if needs_page_review(ocr_page["words"], metadata["capture_type"]):
+                    save_page(engine, settings, row, "qwen", page, fields=[], model_version=VLM_ENGINE_NAME)
+                    completed += 1
+                    _progress(engine, row["job_id"], "qwen_unavailable_page", page=page, completed=completed,
+                              total=eligible, model=VLM_ENGINE_NAME)
+                    continue
+                with engine.connect() as conn:
+                    cloud_approved = conn.execute(text("SELECT status FROM cloud_consent WHERE document_id = :id"),
+                                                  {"id": row["document_id"]}).scalar_one_or_none() == "approved"
+                if cloud_approved:
+                    from smriti.candidates import Candidates
+                    from smriti.processing_store import identity
+                    with Candidates(engine, settings, row["job_id"], identity(row)) as scratch:
+                        cloud_page = scratch.matching("redaction", page, str(page)) is not None
+                    if cloud_page:
+                        save_page(engine, settings, row, "qwen", page, fields=[], model_version=VLM_ENGINE_NAME)
+                        completed += 1
+                        continue
+                if ocr_page and is_boilerplate(ocr_page["text"]):
+                    save_page(engine, settings, row, "qwen", page, fields=[], model_version=VLM_ENGINE_NAME)
+                    completed += 1
+                    continue
                 if session is None:
                     if not is_vlm_available():
                         raise SpoolError("qwen_unavailable")
@@ -160,6 +304,8 @@ def qwen_target(context, report):
                 _progress(engine, row["job_id"], "qwen_page", page=page, completed=completed, total=eligible,
                           model=VLM_ENGINE_NAME, count=len(fields), duration=time.monotonic() - started)
                 report("page_finished", page=page, count=1)
+                del fields
+                gc.collect()
     except Exception as exc:
         if "member" in locals():
             exc.job_id = member["job_id"]

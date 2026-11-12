@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -38,6 +38,7 @@ class Settings:
     ocr_model: str = "PP-OCRv5_mobile"
     ocr_det_model: str = "PP-OCRv5_mobile_det"
     ocr_rec_model: str = "en_PP-OCRv5_mobile_rec"
+    ocr_allow_paddle_fallback: bool = False
     worker_enabled: bool = True
     worker_poll_seconds: float = 2.0
     session_ttl_days: int = 7
@@ -53,6 +54,8 @@ class Settings:
     hwr_margin: float = 0.15
     share_ttl_minutes: int = 30
     vlm_enabled: bool = True
+    gemini_api_key: str | None = field(default=None, repr=False)
+    gemini_model_id: str = "gemini-3.8-flash"
     max_batch_submissions: int = MAX_BATCH_SUBMISSIONS
     max_workset_pages: int = MAX_WORKSET_PAGES
     max_spoolers: int = MAX_SPOOLERS
@@ -148,7 +151,33 @@ class Settings:
         return self.profile == "demo"
 
 
+def _load_env_file(path: Path) -> None:
+    if not path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(path, override=False)
+        return
+    except ImportError:
+        pass
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+    except Exception:
+        pass
+
+
 def load_settings() -> Settings:
+    _load_env_file(BASE_DIR / ".env")
     profile = os.getenv("SMRITI_PROFILE", "local-gpu")
     if profile not in VALID_PROFILES:
         raise ValueError(f"unknown SMRITI_PROFILE: {profile!r}")
@@ -168,6 +197,7 @@ def load_settings() -> Settings:
         ocr_model=os.getenv("SMRITI_OCR_MODEL", "PP-OCRv5_mobile"),
         ocr_det_model=os.getenv("SMRITI_OCR_DET_MODEL", "PP-OCRv5_mobile_det"),
         ocr_rec_model=os.getenv("SMRITI_OCR_REC_MODEL", "en_PP-OCRv5_mobile_rec"),
+        ocr_allow_paddle_fallback=_bool("SMRITI_OCR_ALLOW_PADDLE_FALLBACK", False),
         worker_enabled=_bool("SMRITI_WORKER_ENABLED", True),
         worker_poll_seconds=float(os.getenv("SMRITI_WORKER_POLL_SECONDS", "2")),
         session_ttl_days=int(os.getenv("SMRITI_SESSION_TTL_DAYS", "7")),
@@ -182,6 +212,8 @@ def load_settings() -> Settings:
         max_pixels=int(os.getenv("SMRITI_MAX_PIXELS", "50000000")),
         hwr_margin=float(os.getenv("SMRITI_HWR_MARGIN", "0.15")),
         vlm_enabled=_bool("SMRITI_VLM_ENABLED", True),
+        gemini_api_key=None if profile == "demo" else os.getenv("GEMINI_API_KEY") or None,
+        gemini_model_id=os.getenv("GEMINI_MODEL_ID", "gemini-3.8-flash"),
         max_batch_submissions=int(os.getenv("SMRITI_MAX_BATCH_SUBMISSIONS", "10")),
         max_workset_pages=int(os.getenv("SMRITI_MAX_WORKSET_PAGES", "20")),
         max_spoolers=int(os.getenv("SMRITI_MAX_SPOOLERS", "2")),

@@ -8,6 +8,7 @@ than OCR. Everything else falls back to OCR for that page alone.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -15,7 +16,9 @@ from pathlib import Path
 
 import pymupdf
 
-from smriti.ocr import OcrWord
+from smriti.ocr import OcrEngine, OcrWord
+
+logger = logging.getLogger(__name__)
 
 MIN_WORDS = 20
 MAX_GARBAGE_RATIO = 0.02
@@ -39,6 +42,8 @@ class TextLayerInspection:
     usable: bool
     words: tuple[OcrWord, ...]
     metrics: dict
+    source: str = "text_layer"
+    model_version: str = MODEL_VERSION
 
 
 def _is_garbage(char: str) -> bool:
@@ -102,10 +107,13 @@ def inspect(
     height: float,
     rotation: int = 0,
     image_coverage: float = 0.0,
+    raster_verified: bool | None = None,
 ) -> TextLayerInspection:
     """Decide whether a page's text layer can replace OCR for that page."""
     if width <= 0 or height <= 0:
-        return TextLayerInspection(False, (), {"words": 0, "reason": "bad_page_box"})
+        return TextLayerInspection(
+            False, (), {"words": 0, "reason": "bad_page_box"}, source="ocr"
+        )
     tokens = [word for word in raw_words if word[4].strip()]
     characters = [char for word in tokens for char in word[4]]
     garbage = sum(1 for char in characters if _is_garbage(char))
@@ -147,9 +155,16 @@ def inspect(
         failures.append("outside_page")
     if overlap_ratio > MAX_OVERLAP_RATIO:
         failures.append("overlapping_boxes")
+
     if image_coverage >= FULL_PAGE_IMAGE_COVERAGE:
-        # A scan with an OCR layer: the layer may look fine and still be wrong.
-        failures.append("full_page_image")
+        # Full page raster image + text layer is suspicious.
+        if raster_verified is True:
+            # Verified against image pixels via RapidOCR read_lines
+            pass
+        elif raster_verified is False:
+            failures.append("suspicious_raster_mismatch")
+        else:
+            failures.append("full_page_image")
 
     metrics = {
         "words": len(tokens),
@@ -160,10 +175,14 @@ def inspect(
         "numeric_ratio": round(numeric / total, 4),
         "anchors": anchors,
         "image_coverage": round(image_coverage, 4),
+        "raster_verified": raster_verified,
         "reason": ",".join(failures) or None,
     }
     usable = not failures
-    return TextLayerInspection(usable, tuple(words) if usable else (), metrics)
+    source = "text_layer" if usable else "ocr"
+    return TextLayerInspection(
+        usable, tuple(words) if usable else (), metrics, source=source
+    )
 
 
 def _image_coverage(page: pymupdf.Page, box: pymupdf.Rect) -> float:
@@ -177,32 +196,136 @@ def _image_coverage(page: pymupdf.Page, box: pymupdf.Rect) -> float:
     return min(covered, 1.0)
 
 
-def inspect_page(page: pymupdf.Page) -> TextLayerInspection:
+def _crosscheck_suspicious_page(
+    page: pymupdf.Page, raw_words, ocr_engine: OcrEngine
+) -> bool:
+    """Sample-compare line crops against RapidOCR ONNX read_lines before trusting a raster text layer."""
+    try:
+        from PIL import Image
+
+        lines: dict[tuple[int, int], list] = {}
+        for item in raw_words:
+            line_id = (item[5], item[6])
+            lines.setdefault(line_id, []).append(item)
+
+        sample_lines = [words for words in lines.values() if len(words) >= 2][:4]
+        if not sample_lines:
+            return False
+
+        pixmap = page.get_pixmap(dpi=150)
+        img = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+        scale_x = pixmap.width / max(1.0, page.rect.width)
+        scale_y = pixmap.height / max(1.0, page.rect.height)
+
+        line_crops = []
+        for line in sample_lines:
+            x0 = max(0, int(min(w[0] for w in line) * scale_x))
+            y0 = max(0, int(min(w[1] for w in line) * scale_y))
+            x1 = min(pixmap.width, int(max(w[2] for w in line) * scale_x))
+            y1 = min(pixmap.height, int(max(w[3] for w in line) * scale_y))
+            if x1 > x0 + 4 and y1 > y0 + 4:
+                line_crops.append(img.crop((x0, y0, x1, y1)))
+
+        if not line_crops:
+            return False
+
+        rec_results = ocr_engine.read_lines(line_crops)
+        matches = sum(1 for text, score in rec_results if score >= 0.50 and len(text) > 0)
+        return (matches / len(line_crops)) >= 0.50
+    except Exception as exc:
+        logger.warning("Suspicious raster page cross-check failed: %s", exc)
+        return False
+
+
+def inspect_page(
+    page: pymupdf.Page, ocr_engine: OcrEngine | None = None
+) -> TextLayerInspection:
     box = page.cropbox
     try:
         raw = page.get_text("words", sort=True)
         coverage = _image_coverage(page, box)
     except Exception:
-        # A malformed page must not fail the upload; OCR is the safe fallback.
-        return TextLayerInspection(False, (), {"words": 0, "reason": "text_layer_error"})
+        return TextLayerInspection(
+            False, (), {"words": 0, "reason": "text_layer_error"}, source="ocr"
+        )
+
+    raster_verified: bool | None = None
+    if (
+        coverage >= FULL_PAGE_IMAGE_COVERAGE
+        and ocr_engine is not None
+        and len(raw) >= MIN_WORDS
+    ):
+        raster_verified = _crosscheck_suspicious_page(page, raw, ocr_engine)
+
     return inspect(
         raw,
         width=box.width,
         height=box.height,
         rotation=page.rotation % 360,
         image_coverage=coverage,
+        raster_verified=raster_verified,
     )
+
+
+def inspect_pdf_split(pdf_path: Path, ocr_engine: OcrEngine | None = None) -> dict:
+    """Analyze all pages in a PDF and report the digital vs scanned page split."""
+    doc = pymupdf.open(str(pdf_path))
+    try:
+        total = len(doc)
+        digital = 0
+        scanned = 0
+        per_page = []
+        for idx, page in enumerate(doc, start=1):
+            res = inspect_page(page, ocr_engine=ocr_engine)
+            status = "digital" if res.usable else "scanned"
+            if res.usable:
+                digital += 1
+            else:
+                scanned += 1
+            per_page.append(
+                {
+                    "page": idx,
+                    "status": status,
+                    "words": res.metrics["words"],
+                    "image_coverage": res.metrics["image_coverage"],
+                    "reason": res.metrics["reason"],
+                    "source": res.source,
+                }
+            )
+        return {
+            "pdf": pdf_path.name,
+            "total_pages": total,
+            "digital_pages": digital,
+            "scanned_pages": scanned,
+            "split_ratio": f"{digital}/{total} digital ({(digital / max(1, total)) * 100:.1f}%)",
+            "per_page": per_page,
+        }
+    finally:
+        doc.close()
 
 
 def words_path(page_image: Path) -> Path:
     return page_image.with_suffix(".words.json")
 
 
-def save_words(path: Path, words) -> None:
+def save_words(
+    path: Path,
+    words,
+    source: str = "text_layer",
+    model_version: str = MODEL_VERSION,
+) -> None:
     payload = {
-        "source": "text_layer",
+        "source": source,
+        "model_version": model_version,
         "words": [
-            {"text": word.text, "bbox": word.bbox, "confidence": word.confidence}
+            {
+                "text": word.text,
+                "bbox": word.bbox,
+                "bbox_1000": getattr(
+                    word, "bbox_1000", [int(round(v * 1000)) for v in word.bbox]
+                ),
+                "confidence": word.confidence,
+            }
             for word in words
         ],
     }

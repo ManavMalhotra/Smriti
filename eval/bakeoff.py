@@ -106,13 +106,14 @@ class PaddleOcrBaselineAdapter(BaseParserAdapter):
 
         if self._engine is None:
             settings = load_settings()
-            self._engine = get_ocr_engine(settings.ocr_det_model, settings.ocr_rec_model)
+            self._engine = get_ocr_engine(settings.ocr_det_model, settings.ocr_rec_model,
+                                          allow_paddle_fallback=settings.ocr_allow_paddle_fallback)
 
         t0 = time.perf_counter()
         before = current_resources()
 
         try:
-            words = self._engine.read(image_path)
+            words = self._engine.read(image_path, debug=True)
             after = current_resources()
             latency = time.perf_counter() - t0
             text = " ".join(word.text for word in words)
@@ -138,34 +139,79 @@ class PaddleOcrBaselineAdapter(BaseParserAdapter):
 
 
 class PaddleOcrVlAdapter(BaseParserAdapter):
-    """PaddleOCR-VL vision-language model adapter (e.g. 0.9B document parser)."""
+    """PaddleOCR-VL 1.6 document parser adapter using official doc-parser pipeline."""
+
+    def __init__(self, device: str = "gpu") -> None:
+        self.device = device
+        self._pipeline = None
 
     @property
     def name(self) -> str:
-        return "paddleocr_vl"
+        return "paddleocr_vl_1_6"
 
     def is_available(self) -> tuple[bool, str]:
         try:
-            import paddlex  # noqa: F401
+            from paddleocr import PaddleOCRVL  # noqa: F401
 
-            # Checks if PaddleOCR-VL model weights are downloaded
-            weights_path = Path.home() / ".paddlex" / "models" / "PaddleOCR-VL"
+            weights_path = Path.home() / ".paddlex" / "official_models" / "PaddleOCR-VL-1.6"
             if weights_path.exists():
-                return True, "PaddleOCR-VL model found"
-            return False, "PaddleOCR-VL weights not downloaded (paddlex present)"
-        except ImportError:
-            return False, "PaddleX / PaddleOCR-VL package not installed"
+                return True, "PaddleOCR-VL 1.6 model weights ready"
+            return True, "PaddleOCR-VL pipeline installed"
+        except ImportError as exc:
+            return False, f"PaddleOCR-VL unavailable: {exc}"
 
     def parse_page(self, image_path: Path) -> ParserResult:
         available, reason = self.is_available()
         if not available:
             return ParserResult(engine=self.name, status="unavailable", error=reason)
-        # Stub for when model weights are provided
-        return ParserResult(
-            engine=self.name,
-            status="error",
-            error="Model loading not yet configured on this device",
-        )
+
+        from paddleocr import PaddleOCRVL
+
+        if self._pipeline is None:
+            self._pipeline = PaddleOCRVL(
+                pipeline_version="v1.6",
+                engine="transformers",
+                device=self.device,
+            )
+
+        t0 = time.perf_counter()
+        before = current_resources()
+
+        try:
+            output = list(self._pipeline.predict(str(image_path)))
+            after = current_resources()
+            latency = time.perf_counter() - t0
+
+            extracted_text_parts = []
+            blocks = []
+            if output:
+                res = output[0]
+                parsing_list = getattr(res, "parsing_res_list", []) or []
+                for b in parsing_list:
+                    content = b.get("block_content", "")
+                    if content:
+                        extracted_text_parts.append(content)
+                    blocks.append(b)
+
+            full_text = "\n\n".join(extracted_text_parts)
+            return ParserResult(
+                engine=self.name,
+                status="success",
+                text=full_text,
+                word_count=len(full_text.split()),
+                latency_s=round(latency, 3),
+                peak_process_ram_mb=max(before.process_ram_mb, after.process_ram_mb),
+                peak_system_ram_mb=max(before.system_ram_mb, after.system_ram_mb),
+                peak_gpu_vram_mb=max(before.gpu_vram_mb, after.gpu_vram_mb),
+                metadata={"blocks_count": len(blocks)},
+            )
+        except Exception as exc:
+            return ParserResult(
+                engine=self.name,
+                status="error",
+                error=str(exc),
+                latency_s=round(time.perf_counter() - t0, 3),
+            )
 
 
 class OvisOcrAdapter(BaseParserAdapter):

@@ -165,6 +165,12 @@ def login(payload: LoginRequest, request: Request, response: Response) -> Patien
                 SELECT COUNT(*) FROM audit
                 WHERE entity = 'auth' AND entity_id = :entity_id
                   AND field = 'login_failed' AND ts >= :since
+                  AND ts > COALESCE(
+                      (SELECT MAX(ts) FROM audit
+                       WHERE entity = 'auth' AND entity_id = :entity_id
+                         AND field = 'login_success' AND ts >= :since),
+                      ''
+                  )
                 """
             ),
             {"entity_id": audit_name, "since": since},
@@ -229,3 +235,9 @@ def logout(request: Request) -> Response:
 @router.get("/me", response_model=PatientOut)
 def me(patient: dict = Depends(current_patient)) -> PatientOut:
     return PatientOut(**patient)
+
+
+@router.get("/features")
+def features(request: Request, patient: dict = Depends(current_patient)) -> dict:
+    settings = request.app.state.settings
+    return {"cloud_review_available": bool(settings.gemini_api_key and not settings.demo)}

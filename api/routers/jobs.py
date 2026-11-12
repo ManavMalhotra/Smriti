@@ -31,21 +31,22 @@ def list_jobs(
             WITH owned AS (
                 SELECT j.id, j.state, j.document_id, j.total, d.doc_type, d.created_at,
                        j.progress_json, COALESCE(json_extract(j.progress_json, '$.stage'), j.stage) AS stage,
-                       s.error_code
+                       s.error_code, c.status AS cloud_state
                 FROM jobs j JOIN document d ON d.id = j.document_id
                 LEFT JOIN submissions s ON s.job_id = j.id
+                LEFT JOIN cloud_consent c ON c.document_id = d.id
                 WHERE d.patient_id = :patient_id
                   AND ((:scope = 'active' AND j.state IN ('queued', 'running'))
                     OR (:scope = 'recent' AND j.state IN ('done', 'failed')))
                 UNION ALL
                 SELECT s.job_id, CASE s.state WHEN 'pending_intake' THEN 'queued'
                             WHEN 'preparing' THEN 'running' ELSE 'failed' END,
-                       NULL, NULL, s.requested_doc_type, s.created_at, s.progress_json, s.stage, s.error_code
+                       NULL, NULL, s.requested_doc_type, s.created_at, s.progress_json, s.stage, s.error_code, NULL
                 FROM submissions s WHERE s.patient_id = :patient_id AND s.state <> 'promoted'
                   AND ((:scope = 'active' AND s.state IN ('pending_intake', 'preparing'))
                     OR (:scope = 'recent' AND s.state IN ('rejected', 'failed', 'cancelled')))
             )
-            SELECT id, state, document_id, total, doc_type, created_at, stage, error_code,
+            SELECT id, state, document_id, total, doc_type, created_at, stage, error_code, cloud_state,
                    json_extract(progress_json, '$.model') AS model,
                    json_extract(progress_json, '$.current_page') AS current_page,
                    json_extract(progress_json, '$.completed_pages') AS completed_pages,
@@ -68,6 +69,7 @@ def list_jobs(
         if item["error_code"] not in FAILURE_CODES | INTAKE_ERRORS.keys():
             item["error_code"] = "preparation_failed" if item["state"] == "failed" and item["document_id"] is None else None
         item["total_pages"] = item["total"]
+        item["status"] = "awaiting_cloud_consent" if item.pop("cloud_state") == "awaiting" and item["state"] in {"queued", "running"} else item["state"]
         items.append(item)
     return {"jobs": items, "has_more": len(rows) > limit, "offset": offset, "limit": limit}
 
@@ -131,7 +133,21 @@ def delete_failed_job(
 
         if not (cleanup_processing(engine, settings, job_id) and delete_spool(engine, settings, job_id)):
             api_error(503, "cleanup_failed", "Cleanup is unconfirmed; try again.")
-        shutil.rmtree(settings.upload_dir / owned["image_path"], ignore_errors=True)
+        source_dir = settings.upload_dir / owned["image_path"]
+        try:
+            shutil.rmtree(source_dir)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            api_error(503, "cleanup_failed", "Source cleanup is unconfirmed; try again.")
+        try:
+            source_dir.lstat()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            api_error(503, "cleanup_failed", "Source cleanup is unconfirmed; try again.")
+        else:
+            api_error(503, "cleanup_failed", "Source cleanup is unconfirmed; try again.")
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM stage_artifact WHERE content_hash = :hash"), {"hash": owned["content_hash"]})
             conn.execute(text("DELETE FROM jobs WHERE id = :id"), {"id": job_id})
@@ -155,14 +171,15 @@ def get_job(
                 """
                 SELECT j.id, j.state, j.page, j.total, j.error, j.progress_json,
                        j.document_id, j.total AS total_pages, (SELECT error_code FROM submissions WHERE job_id = j.id) AS error_code,
-                       NULL AS submission_stage
+                       NULL AS submission_stage,
+                       (SELECT status FROM cloud_consent WHERE document_id = j.document_id) AS cloud_state
                 FROM jobs j
                 JOIN document d ON d.id = j.document_id
                 WHERE j.id = :id AND d.patient_id = :patient_id
                 UNION ALL
                 SELECT s.job_id, CASE s.state WHEN 'pending_intake' THEN 'queued'
                            WHEN 'preparing' THEN 'running' ELSE 'failed' END,
-                       0, NULL, NULL, s.progress_json, NULL, NULL, s.error_code, s.stage
+                       0, NULL, NULL, s.progress_json, NULL, NULL, s.error_code, s.stage, NULL
                 FROM submissions s
                 WHERE s.job_id = :id AND s.patient_id = :patient_id AND s.state <> 'promoted'
                 LIMIT 1
@@ -188,6 +205,7 @@ def get_job(
     return {
         "id": row[0],
         "state": row[1],
+        "status": "awaiting_cloud_consent" if row[10] == "awaiting" and row[1] in {"queued", "running"} else row[1],
         "page": row[2],
         "total": row[3],
         "error": error,

@@ -53,6 +53,15 @@ def test_classify_ct_report():
     assert result.doc_type == "ct"
 
 
+def test_classify_imaging_report_with_lab_like_numbers():
+    result = classify_text(
+        "CT SCAN OF CHEST\nHRCT THORAX\nSerum creatinine 0.9 mg/dL\n"
+        "Findings: nodule 8 mm. Impression: stable."
+    )
+    assert result.doc_type == "ct"
+    assert result.confidence >= 0.5
+
+
 def test_classify_mri_report():
     result = classify_text(
         "MRI BRAIN\nMagnetic resonance imaging of the brain\n"
@@ -265,6 +274,37 @@ def test_header_ids_are_not_unresolved_fields():
     assert extraction.fields == []
 
 
+def test_ratios_and_indices_do_not_falsely_map_to_single_analytes():
+    lines = [
+        [_word("Bun/Creatinine Ratio 18.59", 0.1, width=0.6)],
+        [_word("SGOT/SGPT Ratio 1.30", 0.2, width=0.6)],
+        [_word("Albumin/Globulin Ratio 1.54", 0.3, width=0.6)],
+        [_word("Mean Corp Hb (MCH) 25.8 pg", 0.4, width=0.6)],
+        [_word("Serum Bilirubin, (Direct) 0.11", 0.5, width=0.6)],
+        [_word("Blood Urea Nitrogen (BUN) 18.2", 0.6, width=0.6)],
+    ]
+    extraction = extract_document(lines, "lab_report", "printed")
+    mapped_analytes = {f.analyte_id for f in extraction.fields if f.analyte_id}
+    assert "creatinine" not in mapped_analytes
+    assert "ast" not in mapped_analytes
+    assert "albumin" not in mapped_analytes
+    assert "hemoglobin" not in mapped_analytes
+    assert "bilirubin_total" not in mapped_analytes
+    assert "urea" not in mapped_analytes
+
+
+def test_metadata_and_footer_lines_are_not_extracted_fields():
+    lines = [
+        [_word("Machine: BECKMAN COULTER 700", 0.1, width=0.6)],
+        [_word("Method: Hexokinase 200", 0.2, width=0.6)],
+        [_word("Customer Since: 04/Oct/2026", 0.3, width=0.6)],
+        [_word("Plot 1 & 2 Udyog Vihar", 0.4, width=0.6)],
+        [_word("Dr. Preeti MBBS DMC-97534", 0.5, width=0.6)],
+    ]
+    extraction = extract_document(lines, "lab_report", "printed")
+    assert extraction.fields == []
+
+
 def test_handwritten_document_does_not_create_numeric_fields():
     extraction = extract_document(
         [[_word("HbA1c 8.9 %", 0.1)]],
@@ -332,7 +372,7 @@ def test_paddle_adapter_maps_boxes(tmp_path: Path):
 
     engine = PaddleOcrEngine("det", "rec")
     engine._ocr = FakePaddle()
-    words = engine.read(image_path)
+    words = engine.read(image_path, debug=True)
     assert len(words) == 1
     assert words[0].text == "HbA1c 8.9 %"
     assert words[0].bbox == [0.1, 0.2, 0.5, 0.26]

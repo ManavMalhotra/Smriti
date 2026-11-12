@@ -3,84 +3,128 @@
 from __future__ import annotations
 
 import json
-import logging
+import uuid
 from datetime import date
-from typing import Literal
-
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import Body
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import text
 
 from api.errors import api_error
-from smriti.auth import current_patient, owned_document, require_same_patient
-from smriti.ingest import IngestError, ingest_upload, record_consent
-from smriti.models import ConsentCreate, DocType
-
-logger = logging.getLogger(__name__)
+from smriti.auth import audit, current_patient, owned_document
+from smriti.http_intake import receive_upload
+from smriti.ingest import record_consent, redaction_preview, record_cloud_consent
+from smriti.models import ConsentCreate, CloudConsentCreate, DocumentUpdate
+from smriti.observability import safe_engine
+from smriti.spool import SpoolError
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-_ERROR_STATUS = {
-    "not_found": 404,
-    "unsupported_type": 415,
-    "too_large": 413,
-    "quality_rejected": 422,
-    "too_many_pages": 422,
-    "invalid_file": 422,
-    "page_too_large": 422,
-    "ingest_failed": 500,
-}
+@router.patch("/{document_id}")
+def update_document(document_id: str, payload: DocumentUpdate, request: Request,
+                    patient: dict = Depends(current_patient)) -> dict:
+    if request.app.state.settings.demo:
+        api_error(403, "demo_read_only", "The demo profile is read-only.")
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        api_error(400, "validation_error", "No document fields supplied.")
+    for field in ("display_name", "facility_name"):
+        if field in updates and updates[field] is not None:
+            updates[field] = updates[field].strip() or None
+    for field in ("display_name", "facility_name"):
+        if updates.get(field) == "":
+            updates[field] = None
+    with request.app.state.engine.begin() as conn:
+        row = owned_document(conn, document_id, patient["id"])
+        old = row._mapping
+        changed = [(field, old[field], value.isoformat() if hasattr(value, "isoformat") else value)
+                   for field, value in updates.items()
+                   if old[field] != (value.isoformat() if hasattr(value, "isoformat") else value)]
+        if changed:
+            params = {field: new for field, _, new in changed} | {"id": document_id}
+            assignments = ", ".join(f"{field} = :{field}" for field, _, _ in changed)
+            conn.execute(text(f"UPDATE document SET {assignments} WHERE id = :id"), params)
+            for field, old_value, new_value in changed:
+                audit(conn, entity="document", entity_id=document_id, field=field,
+                      old=old_value, new=new_value, actor=patient["username"] or patient["alias"])
+        current = conn.execute(text("SELECT display_name, doc_type, doc_date, verified_date, facility_name FROM document WHERE id=:id"),
+                               {"id": document_id}).mappings().one()
+        return {"document": dict(current)}
 
-
-def _ingest_error(exc: IngestError) -> None:
-    api_error(
-        _ERROR_STATUS.get(exc.code, 422),
-        exc.code,
-        exc.message,
-        field="patient_id" if exc.code == "not_found" else "file",
-    )
-
+@router.post("/{document_id}/quick-entry")
+def save_quick_entry(document_id: str, request: Request, payload: dict = Body(...),
+                     patient: dict = Depends(current_patient)) -> dict:
+    """Save human-entered metadata for a page where handwriting is unsafe to infer."""
+    if request.app.state.settings.demo:
+        api_error(403, "demo_read_only", "The demo profile is read-only.")
+    doc_type = payload.get("doc_type", "prescription")
+    if doc_type not in {"prescription", "pharmacy", "discharge_summary", "lab_report", "other"}:
+        api_error(422, "invalid_doc_type", "Choose a supported document type.")
+    raw_date = payload.get("doc_date")
+    try:
+        doc_date = date.fromisoformat(raw_date).isoformat() if raw_date else None
+    except (TypeError, ValueError):
+        api_error(422, "invalid_date", "Enter a valid document date.")
+    facility = str(payload.get("facility_name") or "").strip()[:160] or None
+    entries = payload.get("medications", [])
+    if not isinstance(entries, list) or len(entries) > 30:
+        api_error(422, "invalid_medications", "Add no more than 30 medications.")
+    with request.app.state.engine.begin() as conn:
+        document = owned_document(conn, document_id, patient["id"])
+        conn.execute(text("UPDATE document SET doc_type=:type, doc_date=COALESCE(:date, doc_date), facility_name=COALESCE(:facility, facility_name) WHERE id=:id"),
+                     {"type": doc_type, "date": doc_date, "facility": facility, "id": document_id})
+        saved = 0
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()[:160]
+            if not name:
+                continue
+            dose = str(entry.get("dose") or "").strip()[:100] or None
+            freq = str(entry.get("frequency") or "").strip()[:100] or None
+            try:
+                page = int(entry.get("page", 1))
+            except (TypeError, ValueError):
+                api_error(422, "invalid_page", "Enter a valid source page.")
+            if not 1 <= page <= document._mapping["page_count"]:
+                api_error(422, "invalid_page", "The source page is outside this document.")
+            conn.execute(text("""INSERT INTO medication (id, patient_id, brand_raw, dose, freq, start_date, status, source_doc_id, clinical_json, page, engine)
+                VALUES (:id, :patient, :name, :dose, :freq, :date, 'prescribed', :doc, :clinical, :page, 'human_entry')"""),
+                {"id": str(uuid.uuid4()), "patient": patient["id"], "name": name, "dose": dose, "freq": freq,
+                 "date": doc_date, "doc": document_id, "page": page,
+                 "clinical": json.dumps({"category": "medication", "event_date": doc_date})})
+            saved += 1
+    return {"document_id": document_id, "doc_type": doc_type, "doc_date": doc_date, "facility_name": facility, "medications_saved": saved}
 
 @router.post("", status_code=202)
-def upload_document(
+async def upload_document(
     request: Request,
-    patient_id: str = Form(...),
-    file: UploadFile = File(...),
-    doc_type: DocType | None = Form(None),
-    consent_scope: Literal["local", "local_plus_projection"] = Form(...),
-    doc_date: date | None = Form(None),
-    collection_date: date | None = Form(None),
     patient: dict = Depends(current_patient),
 ):
     settings = request.app.state.settings
-    require_same_patient(patient_id, patient)
     if settings.demo:
         api_error(403, "demo_read_only", "The demo profile is read-only.")
-
-    data = file.file.read(settings.max_upload_bytes + 1)
-    if len(data) > settings.max_upload_bytes:
-        api_error(
-            413,
-            "too_large",
-            f"File exceeds the {settings.max_upload_bytes} byte limit.",
-            field="file",
-        )
-
+    if not request.app.state.service.accepting:
+        api_error(503, "service_unavailable", "Local processing is paused. Try again after recovery.")
     try:
-        result = ingest_upload(
-            request.app.state.engine,
-            settings,
-            patient_id=patient_id,
-            data=data,
-            doc_type=doc_type or "other",
-            consent_scope=consent_scope,
-            doc_date=doc_date,
-            collection_date=collection_date,
-            actor=patient["username"] or patient["alias"],
-        )
-    except IngestError as exc:
-        _ingest_error(exc)
-
+        result = await receive_upload(request.app.state.engine, settings, request, patient["id"])
+    except SpoolError as exc:
+        errors = {
+            "forbidden": (403, "Uploads must belong to the signed-in account."),
+            "not_found": (404, "The upload owner is unavailable."),
+            "unsupported_type": (415, "Upload a JPEG, PNG, or PDF."),
+            "too_large": (413, "The upload exceeds the byte limit."),
+            "invalid_file": (422, "The uploaded file is empty."),
+            "invalid_metadata": (400, "Check the upload metadata and consent."),
+            "invalid_multipart": (400, "Send one file with valid upload fields."),
+            "capacity_exhausted": (503, "Local upload capacity is unavailable. Try again later."),
+            "spool_busy_or_disk_error": (503, "Local upload storage is busy or unavailable. Try again."),
+            "cleanup_failed": (503, "Upload cleanup is unconfirmed. Local recovery is required."),
+            "disk_error": (503, "The upload could not be stored. Try again."),
+            "disconnected": (400, "The upload was interrupted."),
+        }
+        status, message = errors.get(exc.code, (500, "The upload failed. Try again."))
+        api_error(status, exc.code if exc.code in errors else "intake_failed", message)
     if result.duplicate:
         with request.app.state.engine.connect() as conn:
             duplicate = conn.execute(
@@ -93,24 +137,19 @@ def upload_document(
             status_code=409,
             content={
                 "document_id": result.document_id,
+                "job_id": result.job_id,
                 "status": result.status,
                 "duplicate": True,
                 "doc_type": duplicate[0] if duplicate else "other",
-                "page_count": duplicate[1] if duplicate else 0,
+                "page_count": duplicate[1] if duplicate else None,
             },
         )
 
-    logger.info(
-        "Upload accepted for patient %s: document %s (%d pages, job %s)",
-        patient_id,
-        result.document_id,
-        result.pages,
-        result.job_id,
-    )
+    request.app.state.diagnostics.emit("intake_accepted", component="http", job_id=result.job_id)
     return {
         "document_id": result.document_id,
         "job_id": result.job_id,
-        "pages": result.pages,
+        "pages": None,
         "status": result.status,
     }
 
@@ -118,7 +157,7 @@ def upload_document(
 @router.post("/{document_id}/consent", status_code=201)
 def set_consent(
     document_id: str,
-    payload: ConsentCreate,
+    payload: ConsentCreate | CloudConsentCreate,
     request: Request,
     patient: dict = Depends(current_patient),
 ) -> dict:
@@ -128,6 +167,13 @@ def set_consent(
 
     with request.app.state.engine.connect() as conn:
         owned_document(conn, document_id, patient["id"])
+
+    if isinstance(payload, CloudConsentCreate):
+        try:
+            return record_cloud_consent(request.app.state.engine, settings, document_id, payload,
+                                        patient["username"] or patient["alias"])
+        except SpoolError as exc:
+            api_error(409, exc.code, "Redaction consent is unavailable or the source pages changed. Refresh the queue.")
 
     consent = record_consent(
         request.app.state.engine,
@@ -141,15 +187,33 @@ def set_consent(
     return consent
 
 
+@router.get("/{document_id}/redaction-preview")
+def get_redaction_preview(document_id: str, request: Request, offset: int = Query(0, ge=0, le=2**31 - 1),
+                          patient: dict = Depends(current_patient)):
+    with request.app.state.engine.connect() as conn:
+        owned_document(conn, document_id, patient["id"])
+    try:
+        return JSONResponse(redaction_preview(request.app.state.engine, request.app.state.settings, document_id, offset),
+                            headers={"Cache-Control": "no-store"})
+    except SpoolError as exc:
+        api_error(409, exc.code, "No cloud redaction preview is awaiting consent.")
+
+
 @router.get("/{document_id}")
 def get_document(
     document_id: str,
     request: Request,
     patient: dict = Depends(current_patient),
+    page: int | None = Query(default=None, ge=1),
+    offset: int = Query(default=0, ge=0, le=2**63 - 1024),
 ) -> dict:
     with request.app.state.engine.connect() as conn:
         document = owned_document(conn, document_id, patient["id"])
         document_map = document._mapping
+        selected_page = page if page is not None else 1 if document_map["page_count"] > 20 else None
+        if selected_page is not None and selected_page > document_map["page_count"]:
+            api_error(404, "not_found", "Unknown source page.")
+        params = {"id": document_id, "page": selected_page, "offset": offset}
         consent = conn.execute(
             text(
                 """
@@ -159,62 +223,122 @@ def get_document(
             ),
             {"id": document_id},
         ).first()
-        egress_rows = conn.execute(
+        egress_rows = _bounded_rows(conn,
             text(
                 """
                 SELECT id, payload_sha256, model_id, prompt_version,
                        schema_version, outcome, reason, ts
-                FROM egress WHERE document_id = :id ORDER BY ts
+                FROM egress WHERE document_id = :id ORDER BY ts, id LIMIT 101 OFFSET :offset
                 """
             ),
-            {"id": document_id},
-        ).all()
-        page_rows = conn.execute(
+            params, ("model_id", "prompt_version", "schema_version", "outcome", "reason"),
+        )
+        job_rows = conn.execute(text("SELECT state, ts, progress_json FROM jobs WHERE document_id=:id ORDER BY ts, id"),
+                                {"id": document_id}).mappings().all()
+        page_rows = _bounded_rows(conn,
             text(
                 """
                 SELECT page, text, engine, source, model_version FROM page_text
-                WHERE document_id = :id ORDER BY page
+                WHERE document_id = :id AND (:page IS NULL OR page = :page) ORDER BY page LIMIT 20
                 """
             ),
-            {"id": document_id},
-        ).all()
-        observation_rows = conn.execute(
+            params, ("text", "engine", "source", "model_version"),
+        )
+        report_rows = _bounded_rows(conn,
             text(
                 """
-                SELECT id, analyte_id, label_raw, value_num, value_text, unit_raw,
+                SELECT r.id, r.category, r.report_type, r.report_date,
+                       r.facility_name, r.title, r.summary, r.page_start, r.page_end,
+                       r.status, r.reason, r.model_version, r.created_at,
+                       (SELECT COUNT(*) FROM observation o
+                        WHERE o.report_id = r.id) AS fact_count,
+                       (SELECT COUNT(*) FROM observation o
+                        WHERE o.report_id = r.id AND o.status = 'review') AS review_count
+                FROM report r
+                WHERE r.document_id = :id
+                  AND (:page IS NULL OR (r.page_start <= :page AND r.page_end >= :page))
+                ORDER BY r.page_start, r.id LIMIT 101 OFFSET :offset
+                """
+            ),
+            params, ("facility_name", "title", "summary", "reason", "model_version"),
+        )
+        observation_rows = _bounded_rows(conn,
+            text(
+                """
+                SELECT id, document_id, report_id, analyte_id, label_raw, label_norm,
+                       fact_type, evidence_quote, value_num, value_text, unit_raw,
                        unit_norm, ref_low, ref_high, flag_printed, bbox_json, page,
                        engine, confidence, status, reason, mapping_rule, source,
                        model_version, created_at
                 FROM observation
                 WHERE document_id = :id
-                ORDER BY page, created_at
+                  AND (:page IS NULL OR page = :page)
+                ORDER BY page, created_at, id LIMIT 101 OFFSET :offset
                 """
             ),
-            {"id": document_id},
-        ).all()
-        medication_rows = conn.execute(
+            params, ("id", "document_id", "report_id", "analyte_id", "label_raw", "label_norm", "value_num", "value_text", "unit_raw", "unit_norm", "ref_low", "ref_high", "flag_printed", "evidence_quote", "bbox_json", "reason", "engine", "model_version", "mapping_rule", "source", "created_at"),
+        )
+        medication_rows = _bounded_rows(conn,
             text(
                 """
                 SELECT id, brand_raw, salt, dose, freq, start_date, status,
                        reported_at, source_doc_id
                 FROM medication
                 WHERE source_doc_id = :id
-                ORDER BY brand_raw
+                ORDER BY brand_raw, id LIMIT 101 OFFSET :offset
                 """
             ),
-            {"id": document_id},
-        ).all()
+            params, ("brand_raw", "salt", "dose", "freq"),
+        )
+
+    has_more = any(len(rows) > 100 for rows in (egress_rows, report_rows, observation_rows, medication_rows))
+    egress_rows, report_rows, observation_rows, medication_rows = (
+        rows[:100] for rows in (egress_rows, report_rows, observation_rows, medication_rows))
 
     status = document_map["status"]
     page_count = document_map["page_count"]
     pages = (
         [
             {"page": page, "url": f"/api/documents/{document_id}/page/{page}"}
-            for page in range(1, page_count + 1)
+            for page in ([selected_page] if selected_page is not None else range(1, page_count + 1))
         ]
-        if status not in ("rejected_quality", "failed")
+        if status != "rejected_quality"
         else []
     )
+    processing_runs = []
+    for job in job_rows:
+        try:
+            progress = json.loads(job["progress_json"] or "{}")
+        except (TypeError, ValueError):
+            progress = {}
+        if not isinstance(progress, dict):
+            progress = {}
+        events = progress.get("events", [])
+        events = [event for event in events if isinstance(event, dict)] if isinstance(events, list) else []
+        attempts = []
+        for event in events:
+            if event.get("event") == "started":
+                attempts.append({"started_at": event.get("timestamp") or progress.get("started_at") or job["ts"],
+                                 "finished_at": None, "model": safe_engine(event.get("model") or progress.get("model")),
+                                 "events": []})
+            if not attempts:
+                continue
+            attempt = attempts[-1]
+            if event.get("model"):
+                attempt["model"] = safe_engine(event["model"])
+            if event.get("event") in {"started", "ocr_loading", "page_read", "text_layer", "classified", "qwen_ready", "done", "failed"}:
+                attempt["events"].append({"timestamp": event.get("timestamp"), "stage": event.get("stage"),
+                                          "message": event.get("message"), "page": event.get("page")})
+            if event.get("event") in {"done", "failed"}:
+                attempt["finished_at"] = event.get("timestamp")
+        if not attempts:
+            attempts.append({"started_at": progress.get("started_at") or job["ts"],
+                             "finished_at": progress.get("finished_at"),
+                             "model": safe_engine(progress.get("model")), "events": []})
+        for number, attempt in enumerate(attempts, start=1):
+            attempt["number"] = number
+            attempt["elapsed_seconds"] = progress.get("elapsed_seconds") if number == len(attempts) else None
+            processing_runs.append(attempt)
 
     observations = []
     for row in observation_rows:
@@ -226,8 +350,13 @@ def get_document(
         observations.append(
             {
                 "id": mapping["id"],
+                "document_id": mapping["document_id"],
+                "report_id": mapping["report_id"],
                 "analyte_id": mapping["analyte_id"],
                 "label_raw": mapping["label_raw"],
+                "label_norm": mapping["label_norm"],
+                "fact_type": mapping["fact_type"],
+                "evidence_quote": mapping["evidence_quote"],
                 "value_num": mapping["value_num"],
                 "value_text": mapping["value_text"],
                 "unit_raw": mapping["unit_raw"],
@@ -252,6 +381,8 @@ def get_document(
         "id": document_map["id"],
         "patient_id": document_map["patient_id"],
         "doc_type": document_map["doc_type"],
+        "display_name": document_map["display_name"],
+        "verified_date": document_map["verified_date"],
         "doc_type_confidence": document_map["doc_type_confidence"],
         "capture_type": document_map["capture_type"],
         "doc_date": document_map["doc_date"],
@@ -289,6 +420,7 @@ def get_document(
             }
             for row in egress_rows
         ],
+        "processing_runs": processing_runs,
         "page_text": [
             {
                 "page": row[0],
@@ -298,6 +430,26 @@ def get_document(
                 "model_version": row[4],
             }
             for row in page_rows
+        ],
+        "reports": [
+            {
+                "id": row._mapping["id"],
+                "category": row._mapping["category"],
+                "report_type": row._mapping["report_type"],
+                "report_date": row._mapping["report_date"],
+                "facility_name": row._mapping["facility_name"],
+                "title": row._mapping["title"],
+                "summary": row._mapping["summary"],
+                "page_start": row._mapping["page_start"],
+                "page_end": row._mapping["page_end"],
+                "status": row._mapping["status"],
+                "reason": row._mapping["reason"],
+                "model_version": row._mapping["model_version"],
+                "created_at": row._mapping["created_at"],
+                "fact_count": row._mapping["fact_count"],
+                "review_count": row._mapping["review_count"],
+            }
+            for row in report_rows
         ],
         "observations": observations,
         "medications": [
@@ -315,7 +467,19 @@ def get_document(
             for row in medication_rows
         ],
         "pages": pages,
+        "detail_page": selected_page,
+        "offset": offset,
+        "has_more": has_more,
     }
+
+
+def _bounded_rows(conn, statement, params, text_columns):
+    # Size in SQLite before decoding rows; never truncate clinical content to fit a response.
+    lengths = " + ".join(f"COALESCE(length(CAST({name} AS BLOB)), 0)" for name in text_columns)
+    size = conn.execute(text(f"SELECT COALESCE(SUM({lengths}), 0) FROM ({statement.text})"), params).scalar_one()
+    if size > 2 * 1024**2:
+        api_error(413, "detail_capacity", "This result range is too large to display. Choose a single source page or a later result range.")
+    return conn.execute(statement, params).all()
 
 
 @router.get("/{document_id}/page/{page_number}")
@@ -340,7 +504,7 @@ def get_page(
     if document is None:
         api_error(404, "not_found", f"Unknown document {document_id}.")
     image_path, page_count, status = document
-    if status in ("rejected_quality", "failed") or not 1 <= page_number <= page_count:
+    if status == "rejected_quality" or not 1 <= page_number <= page_count:
         api_error(404, "not_found", f"Unknown page {page_number}.")
 
     root = settings.upload_dir.resolve()

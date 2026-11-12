@@ -208,3 +208,35 @@ def test_validation_error_uses_contract_shape(client):
     error = response.json()["error"]
     assert error["code"] == "validation_error"
     assert error["field"] == "alias"
+
+
+@pytest.mark.parametrize(
+    "changes, field, message",
+    [
+        ({"username": "ab"}, "username", "3–32 characters"),
+        ({"username": "has spaces"}, "username", "letters, numbers"),
+        ({"password": "short"}, "password", "8–128 characters"),
+        ({"alias": "   "}, "alias", "patient alias"),
+    ],
+)
+def test_registration_validation_is_actionable_and_private(client, changes, field, message):
+    payload = {"alias": "Synthetic", "username": "synthetic-user", "password": "private-test-password"}
+    response = client.post("/api/auth/register", json={**payload, **changes})
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["field"] == field
+    assert message in error["message"]
+    assert "private-test-password" not in response.text
+    assert "input" not in error
+
+
+def test_registration_validates_normalized_username_and_alias(client):
+    response = client.post(
+        "/api/auth/register",
+        json={"alias": "  Synthetic  ", "username": "  synthetic-user  ", "password": " password with spaces "},
+    )
+    assert response.status_code == 201
+    assert response.json()["username"] == "synthetic-user"
+    assert response.json()["alias"] == "Synthetic"
+    client.post("/api/auth/logout")
+    assert client.post("/api/auth/login", json={"username": "synthetic-user", "password": " password with spaces "}).status_code == 200

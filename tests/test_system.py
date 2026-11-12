@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import text
 
 from smriti.ocr import OcrWord
-from smriti.worker import process_next
+from tests.staged_runtime import run_batch
 from tests.factory import handwritten_image, jpeg_bytes, make_patient, text_image, upload
 
 pytestmark = pytest.mark.system
@@ -50,7 +50,7 @@ def test_printed_lab_journey_from_upload_to_reviewed_summary(client, app, settin
     assert uploaded.status_code == 202, uploaded.text
     body = uploaded.json()
 
-    assert process_next(app.state.engine, settings, ocr_engine=_PrintedLabOcr()) is True
+    assert run_batch(app.state.engine, settings, ocr_engine=_PrintedLabOcr()) is True
 
     job = client.get(f"/api/jobs/{body['job_id']}")
     assert job.status_code == 200
@@ -119,7 +119,7 @@ def test_handwritten_journey_creates_no_numeric_results_or_directives(
     assert uploaded.status_code == 202, uploaded.text
     body = uploaded.json()
 
-    assert process_next(app.state.engine, settings, ocr_engine=_HandwrittenOcr()) is True
+    assert run_batch(app.state.engine, settings, ocr_engine=_HandwrittenOcr()) is True
 
     detail = client.get(f"/api/documents/{body['document_id']}").json()
     assert detail["status"] == "done"

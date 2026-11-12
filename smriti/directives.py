@@ -364,3 +364,16 @@ def extract_directives(
             continue
         unique.append(directive)
     return unique
+
+
+def iter_directives(raw_lines, *, collection_date=None, doc_date=None, as_of=None):
+    """Exact original Unicode offsets, with overlap selection bounded to one logical line."""
+    anchor_event, anchor_date = _anchor(collection_date, doc_date)
+    reference = as_of or date.today()
+    offset, last_end = 0, -1
+    for raw_line in raw_lines:
+        for directive in _parse_line(raw_line.rstrip("\r\n"), offset, anchor_event, anchor_date, reference):
+            if directive.span_start >= last_end:
+                yield directive
+                last_end = directive.span_end
+        offset += len(raw_line)

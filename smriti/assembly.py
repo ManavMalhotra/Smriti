@@ -115,6 +115,17 @@ def find_table_header(rows: tuple[Row, ...] | list[Row]) -> TableTemplate | None
     return None
 
 
+def carry_table_template(
+    previous_template: TableTemplate | None,
+    current_rows: list[Row] | tuple[Row, ...],
+) -> TableTemplate | None:
+    """Carry forward a table header template across multi-page continuations."""
+    template = find_table_header(current_rows)
+    if template is not None:
+        return template
+    return previous_template
+
+
 def align_words_to_template(
     words: list[OcrWord], template: TableTemplate
 ) -> dict[str, list[OcrWord]]:

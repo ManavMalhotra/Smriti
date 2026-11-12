@@ -60,8 +60,32 @@ def default_unit(analyte_id: str | None) -> str | None:
 def match_analyte(text: str) -> tuple[Analyte, str] | None:
     """Return the longest configured synonym found in text."""
     lowered = text.lower()
+    is_ratio = bool(re.search(r"ratio\b|index\b|\ba/g\b", lowered))
+    has_mch = bool(re.search(r"\b(?:mean\s+corp|mch|mchc|corpuscular)\b", lowered))
+    has_fractional_bili = bool(
+        re.search(r"\b(?:direct|conjugated|indirect|unconjugated)\b", lowered)
+    )
+    has_bun = bool(re.search(r"\b(?:nitrogen|bun)\b", lowered))
+
     best: tuple[Analyte, str] | None = None
     for analyte in analytes():
+        if is_ratio and analyte.id in {
+            "creatinine",
+            "urea",
+            "albumin",
+            "ast",
+            "alt",
+            "platelets",
+            "wbc",
+        }:
+            continue
+        if has_mch and analyte.id == "hemoglobin":
+            continue
+        if has_fractional_bili and analyte.id == "bilirubin_total":
+            continue
+        if has_bun and analyte.id == "urea":
+            continue
+
         for synonym in analyte.synonyms:
             if re.search(rf"(?<![a-z0-9]){re.escape(synonym)}(?![a-z0-9])", lowered):
                 if best is None or len(synonym) > len(best[1]):

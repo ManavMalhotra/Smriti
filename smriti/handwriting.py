@@ -103,3 +103,13 @@ def detect_capture_type(bgr: np.ndarray) -> str:
         and axis_ratio >= 0.60
     )
     return "printed" if looks_printed else "handwritten"
+
+
+def needs_page_review(words, capture_type: str) -> bool:
+    """Keep uncertain or handwriting-like page text out of automated clinical extraction."""
+    if capture_type == "handwritten":
+        return True
+    count = len(words)
+    average = sum(word.confidence for word in words) / count if count else 0
+    fragments = sum(len(word.text.strip()) <= 2 for word in words)
+    return count < 5 or average < .45 or count >= 10 and fragments / count > .7

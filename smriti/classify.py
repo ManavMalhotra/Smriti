@@ -7,6 +7,15 @@ from dataclasses import dataclass
 
 from smriti.analytes import analytes
 
+BOILERPLATE_SKIP = "BOILERPLATE_SKIP"
+BOILERPLATE_MARKERS = ("terms & conditions", "supplement suggestions", "download healthians app",
+                      "health advisory", "suggested nutrition")
+
+
+def is_boilerplate(text: str) -> bool:
+    lowered = text.casefold()
+    return sum(marker in lowered for marker in BOILERPLATE_MARKERS) >= 2
+
 LAB_KEYWORDS = (
     "reference range",
     "ref range",
@@ -140,7 +149,8 @@ RADIOLOGY_KEYWORDS = (
     "imaging",
 )
 
-# Distinctive vocabulary: one hit is enough to accept these types.
+# Distinctive vocabulary: two hits can override incidental lab signals; one hit
+# is enough when this type is already the top score.
 STRONG_TYPES = {"discharge_summary", "ct", "mri", "xray", "pathology", "radiology"}
 
 _NUMBER_UNIT = re.compile(
@@ -172,6 +182,8 @@ def _score(text: str, keywords: tuple[str, ...]) -> float:
 
 
 def classify_text(text: str) -> Classification:
+    if is_boilerplate(text):
+        return Classification(BOILERPLATE_SKIP, 1.0, {})
     lowered = text.lower()
     scores = {
         "lab_report": _score(lowered, LAB_KEYWORDS),
@@ -195,11 +207,70 @@ def classify_text(text: str) -> Classification:
                 scores["lab_report"] += 0.5
                 break
 
+    return _classify_scores(scores)
+
+
+def _classify_scores(scores) -> Classification:
+
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     top_type, top_score = ranked[0]
     total = sum(scores.values())
+
+    # A distinctive imaging/pathology/discharge phrase beats incidental lab-like
+    # numbers in the same report. One hit is not enough; two independent signals are.
+    strong_type, strong_score = max(
+        ((kind, score) for kind, score in scores.items() if kind in STRONG_TYPES),
+        key=lambda item: item[1],
+        default=("other", 0.0),
+    )
+    if strong_score >= 2.0 and top_type not in STRONG_TYPES:
+        top_type, top_score = strong_type, strong_score
+
     threshold = 1.0 if top_type in STRONG_TYPES else 2.0
     if top_score < threshold or total <= 0:
         confidence = 0.0 if total <= 0 else round(1.0 - top_score / total, 3)
         return Classification("other", confidence, scores)
+    if top_type in STRONG_TYPES:
+        return Classification(top_type, round(min(1.0, top_score / (top_score + 1)), 3), scores)
     return Classification(top_type, round(top_score / total, 3), scores)
+
+
+def classify_pages(page_texts) -> Classification:
+    """Presence counted once across all pages, including whitespace-spanning numeric/medicine signals."""
+    keywords = {"lab_report": LAB_KEYWORDS, "prescription": PRESCRIPTION_KEYWORDS, "pharmacy": PHARMACY_KEYWORDS,
+                "discharge_summary": DISCHARGE_KEYWORDS, "ct": CT_KEYWORDS, "mri": MRI_KEYWORDS,
+                "xray": XRAY_KEYWORDS, "pathology": PATHOLOGY_KEYWORDS, "radiology": RADIOLOGY_KEYWORDS}
+    patterns = [(kind, index, re.compile(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])"))
+                for kind, words in keywords.items() for index, word in enumerate(words)]
+    synonyms = [[re.compile(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])") for word in analyte.synonyms]
+                for analyte in analytes()]
+    special_tail = ""
+    seen = set()
+    seen_analytes = set()
+    number = medicine = False
+    special_prefix = ""
+    for text in page_texts:
+        if is_boilerplate(text):
+            special_tail = special_prefix = ""
+            continue
+        lowered = text.lower()
+        # Literal phrases cannot cross the newline joining pages; a cut tail can invent a synonym.
+        for kind, index, pattern in patterns:
+            if (kind, index) not in seen and pattern.search(lowered):
+                seen.add((kind, index))
+        for index, alternatives in enumerate(synonyms):
+            if index not in seen_analytes and any(pattern.search(lowered) for pattern in alternatives):
+                seen_analytes.add(index)
+        # Only these two presence grammars permit arbitrary whitespace/digits; collapsing runs preserves their boundaries.
+        compact = re.sub(r"\d+", "0", lowered)
+        special = re.sub(r"\s+", " ", (special_tail + "\n" if special_tail else "") + compact)
+        search = special_prefix + special
+        number = number or any(not special_prefix or match.start() > 0 for match in _NUMBER_UNIT.finditer(search))
+        medicine = medicine or any(not special_prefix or match.start() > 0 for match in _MED_LINE.finditer(search))
+        # After digit/space run collapse, a number+unit needs <20 chars and a medicine signal needs <10.
+        special_prefix = special[-33] if len(special) > 32 else ""
+        special_tail = special[-32:]
+    scores = {kind: float(sum(found_kind == kind for found_kind, _ in seen)) for kind in keywords}
+    scores["lab_report"] += float(number) + 0.5 * len(seen_analytes)
+    scores["prescription"] += 1.5 * medicine
+    return _classify_scores(scores)
