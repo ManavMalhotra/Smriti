@@ -10,25 +10,60 @@ export default function Auth({ onAuthenticated }) {
   const [sex, setSex] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [errorField, setErrorField] = useState("");
   const headingRef = useRef(null);
+  const formRef = useRef(null);
 
   useEffect(() => {
     headingRef.current?.focus();
   }, [mode]);
 
+  useEffect(() => {
+    if (errorField && error) formRef.current?.elements.namedItem(errorField)?.focus();
+  }, [error, errorField]);
+
   function switchMode(next) {
     setMode(next);
     setPassword("");
     setError("");
+    setErrorField("");
+  }
+
+  function fieldError(field) {
+    return error && errorField === field ? (
+      <p id={`${field}-error`} className="field-error" role="alert">{error}</p>
+    ) : null;
+  }
+
+  function invalid(message, field) {
+    setError(message);
+    setErrorField(field);
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (busy) return;
     setError("");
+    setErrorField("");
 
     if (mode === "register" && !alias.trim()) {
-      setError("Enter a patient alias.");
+      invalid("Enter a patient alias.", "alias");
       return;
+    }
+
+    if (mode === "register") {
+      if (alias.trim().length > 64) {
+        invalid("Use a patient alias with 1–64 characters.", "alias");
+        return;
+      }
+      if (!/^[A-Za-z0-9._-]{3,32}$/.test(username.trim())) {
+        invalid("Use 3–32 characters: letters, numbers, dots, underscores, or hyphens.", "username");
+        return;
+      }
+      if (password.length < 8 || password.length > 128) {
+        invalid("Use a password with 8–128 characters.", "password");
+        return;
+      }
     }
     if (!username.trim() || !password) {
       setError("Enter a username and password.");
@@ -54,6 +89,8 @@ export default function Auth({ onAuthenticated }) {
       onAuthenticated(patient);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed. Try again.");
+      const field = err?.data?.error?.field;
+      setErrorField(["alias", "username", "password", "sex"].includes(field) ? field : "");
     } finally {
       setBusy(false);
     }
@@ -70,7 +107,6 @@ export default function Auth({ onAuthenticated }) {
 
       <main className="auth-main">
         <section className="panel auth-card" aria-labelledby="auth-heading">
-          <p className="eyebrow">Private by default</p>
           <h1 id="auth-heading" ref={headingRef} tabIndex={-1}>
             {registering ? "Create your account" : "Sign in"}
           </h1>
@@ -80,7 +116,7 @@ export default function Auth({ onAuthenticated }) {
               : "Your documents and extracted results are visible only to this account."}
           </p>
 
-          <form onSubmit={handleSubmit} noValidate>
+          <form ref={formRef} onSubmit={handleSubmit} noValidate aria-busy={busy}>
             <div className="form-grid">
               {registering ? (
                 <div className="field">
@@ -93,8 +129,11 @@ export default function Auth({ onAuthenticated }) {
                     onChange={(event) => setAlias(event.target.value)}
                     maxLength={64}
                     autoComplete="off"
+                    aria-invalid={errorField === "alias" && Boolean(error) || undefined}
+                    aria-describedby={errorField === "alias" && error ? "alias-error" : undefined}
                     required
                   />
+                  {fieldError("alias")}
                 </div>
               ) : null}
 
@@ -112,8 +151,11 @@ export default function Auth({ onAuthenticated }) {
                   autoComplete="username"
                   autoCapitalize="none"
                   spellCheck="false"
+                  aria-invalid={errorField === "username" && Boolean(error) || undefined}
+                  aria-describedby={errorField === "username" && error ? "username-error" : undefined}
                   required
                 />
+                {fieldError("username")}
               </div>
 
               <div className="field">
@@ -127,10 +169,13 @@ export default function Auth({ onAuthenticated }) {
                   minLength={registering ? 8 : 1}
                   maxLength={128}
                   autoComplete={registering ? "new-password" : "current-password"}
+                  aria-invalid={errorField === "password" && Boolean(error) || undefined}
+                  aria-describedby={errorField === "password" && error ? "password-error" : registering ? "password-help" : undefined}
                   required
                 />
+                {fieldError("password")}
                 {registering ? (
-                  <p className="field-note">At least 8 characters. Stored only on this device.</p>
+                  <p id="password-help" className="field-note">8–128 characters. Stored only on this device.</p>
                 ) : null}
               </div>
 
@@ -142,17 +187,20 @@ export default function Auth({ onAuthenticated }) {
                     name="sex"
                     value={sex}
                     onChange={(event) => setSex(event.target.value)}
+                    aria-invalid={errorField === "sex" && Boolean(error) || undefined}
+                    aria-describedby={errorField === "sex" && error ? "sex-error" : undefined}
                   >
                     <option value="">Not recorded</option>
                     <option value="F">Female</option>
                     <option value="M">Male</option>
                     <option value="O">Other</option>
                   </select>
+                  {fieldError("sex")}
                 </div>
               ) : null}
             </div>
 
-            {error ? (
+            {error && !errorField ? (
               <div className="alert" role="alert">
                 {error}
               </div>
@@ -160,12 +208,13 @@ export default function Auth({ onAuthenticated }) {
 
             <div className="form-actions">
               <button type="submit" className="button-primary" disabled={busy}>
-                {busy ? "Please wait…" : registering ? "Create account" : "Sign in"}
+                {busy ? registering ? "Creating account…" : "Signing in…" : registering ? "Create account" : "Sign in"}
               </button>
               <button
                 type="button"
                 className="text-button"
                 onClick={() => switchMode(registering ? "login" : "register")}
+                disabled={busy}
               >
                 {registering ? "I already have an account" : "Create an account"}
               </button>

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import PageOverlay from "./PageOverlay";
 import { formatDate, shortId } from "../lib/format";
 
-export default function SourceOverlay({ source, onClose }) {
+export default function SourceOverlay({ source, onClose, drawer = false }) {
   const dialogRef = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -65,7 +65,7 @@ export default function SourceOverlay({ source, onClose }) {
     >
       <section
         ref={dialogRef}
-        className="source source-modal"
+        className={`source source-modal${drawer ? " source-drawer" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="source-heading"
@@ -119,7 +119,7 @@ export default function SourceOverlay({ source, onClose }) {
               Page {source.page} · document #{shortId(source.document_id)}
             </p>
             <p className="source-note">
-              Highlighted region on the original page. Images and text stay on this device.
+              Highlighted region on the original page, stored on this device.
             </p>
             {source.pageUrl ? (
               <p>

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import Footer from "../components/Footer";
 import JobProgress from "../components/JobProgress";
+import RedactionConsent from "../components/RedactionConsent";
 import { requestJson } from "../lib/api";
 import { docTypeLabel, shortId, statusLabel } from "../lib/format";
 
 const PAGE_SIZE = 20;
 
-export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOut }) {
+export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOut, cloudReviewAvailable = false, onDocuments }) {
   const [scope, setScope] = useState("active");
   const [offset, setOffset] = useState(0);
   const [jobs, setJobs] = useState([]);
@@ -17,6 +18,7 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
   const [detail, setDetail] = useState(null);
   const [detailError, setDetailError] = useState("");
   const [refresh, setRefresh] = useState(0);
+  const awaiting = jobs.find((job) => job.status === "awaiting_cloud_consent");
 
   useEffect(() => {
     let cancelled = false;
@@ -109,11 +111,14 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
         <div className="wordmark">Smriti</div>
         <div className="topbar-actions">
           <button type="button" className="text-button" onClick={onDone}>Back to summary</button>
+          {onDocuments ? <button type="button" className="text-button" onClick={onDocuments}>Documents</button> : null}
           <button type="button" className="text-button" onClick={onAdd}>Add document</button>
           <button type="button" className="text-button" onClick={onSignOut}>Sign out</button>
         </div>
       </div>
       <main>
+        {cloudReviewAvailable && awaiting ? <RedactionConsent key={awaiting.document_id} documentId={awaiting.document_id} cloudAvailable={cloudReviewAvailable}
+          onResolved={() => { setJobs((current) => current.map((job) => job.id === awaiting.id ? { ...job, status: "running" } : job)); setRefresh((value) => value + 1); }} /> : null}
         <header className="page-head"><h1 tabIndex={-1}>Queue</h1></header>
         <div className="form-actions queue-controls" aria-label="Job lists">
           <button type="button" className="button-secondary" aria-pressed={scope === "active"} onClick={() => changePage("active", 0)}>Active</button>

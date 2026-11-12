@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DocumentDetail from "../pages/DocumentDetail";
@@ -97,10 +97,11 @@ describe("DocumentDetail", () => {
       await screen.findByRole("heading", { level: 1, name: "Document review" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: "Page 1 of the Lab report" }),
+      await screen.findByRole("img", { name: "Page 1 of the Lab report" }),
     ).toBeInTheDocument();
     expect(screen.getByText("HbA1c")).toBeInTheDocument();
     expect(screen.getByText("8.9")).toBeInTheDocument();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/documents/doc-1?page=1&offset=0");
 
     const row = screen.getByRole("row", { name: /HbA1c/ });
     await user.click(within(row).getByRole("button", { name: "Accept" }));
@@ -150,6 +151,114 @@ describe("DocumentDetail", () => {
     });
   });
 
+  it("corrects a text-only prose field", async () => {
+    const prose = observation({
+      analyte_id: null,
+      label_raw: "Impression",
+      value_num: null,
+      value_text: "Normal CT brain.",
+      unit_raw: null,
+      ref_low: null,
+      ref_high: null,
+      fact_type: "impression",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(detailResponse({ observations: [prose] })),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          observation: { ...prose, value_text: "No acute abnormality.", status: "auto" },
+          summary: {},
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<DocumentDetail documentId="doc-1" patient={patient} onBack={() => {}} />);
+
+    const row = await screen.findByRole("row", { name: /Impression/ });
+    await user.click(within(row).getByRole("button", { name: "Correct" }));
+    const value = within(row).getByLabelText("Value");
+    await user.clear(value);
+    await user.type(value, "No acute abnormality.");
+    await user.click(within(row).getByRole("button", { name: "Save" }));
+
+    const [url, options] = fetchMock.mock.calls[1];
+    expect(url).toBe("/api/observations/obs-1/review");
+    expect(JSON.parse(options.body)).toEqual({
+      action: "correct",
+      value_text: "No acute abnormality.",
+      unit_norm: null,
+    });
+  });
+
+  it("corrects report date, category, title, and facility", async () => {
+    const report = {
+      id: "r-1",
+      category: "imaging",
+      report_type: "ct",
+      report_date: "2024-03-02",
+      facility_name: "BESTB DIAGNOSTICS",
+      title: "BESTB DIAGNOSTICS",
+      summary: "Stable.",
+      page_start: 1,
+      page_end: 1,
+      status: "auto",
+      reason: null,
+      model_version: "test",
+      created_at: "2026-10-23T00:00:00Z",
+      fact_count: 0,
+      review_count: 0,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(detailResponse({ reports: [report] })))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          report: {
+            ...report,
+            report_date: "2024-03-03",
+            category: "lab",
+            title: "CT chest",
+            facility_name: "City Hospital",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<DocumentDetail documentId="doc-1" patient={patient} onBack={() => {}} />);
+
+    await screen.findByRole("heading", { name: "Reports in this document" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit date and category" }),
+    );
+    const date = screen.getByLabelText("Date");
+    await user.clear(date);
+    await user.type(date, "2024-03-03");
+    await user.selectOptions(screen.getByLabelText("Category"), "lab");
+    const title = screen.getByLabelText("Title");
+    await user.clear(title);
+    await user.type(title, "CT chest");
+    const facility = screen.getByLabelText("Facility");
+    await user.clear(facility);
+    await user.type(facility, "City Hospital");
+    await user.click(screen.getByRole("button", { name: "Save report" }));
+
+    const [url, options] = fetchMock.mock.calls[1];
+    expect(url).toBe("/api/reports/r-1");
+    expect(options.method).toBe("PATCH");
+    expect(JSON.parse(options.body)).toEqual({
+      report_date: "2024-03-03",
+      category: "lab",
+      title: "CT chest",
+      facility_name: "City Hospital",
+    });
+    expect(await screen.findByText("CT chest")).toBeInTheDocument();
+  });
+
   it("disables accept and correct for an unmapped field", async () => {
     const fetchMock = vi
       .fn()
@@ -173,5 +282,48 @@ describe("DocumentDetail", () => {
     expect(within(row).getByRole("button", { name: "Accept" })).toBeDisabled();
     expect(within(row).getByRole("button", { name: "Correct" })).toBeDisabled();
     expect(within(row).getByRole("button", { name: "Reject" })).toBeEnabled();
+  });
+
+  it("requests bounded source pages and result ranges without losing an edit", async () => {
+    const fetchMock = vi.fn((url) => {
+      const query = new URL(url, "http://localhost").searchParams;
+      const page = Number(query.get("page"));
+      return Promise.resolve(jsonResponse(detailResponse({
+        page_count: 1001, detail_page: page, offset: Number(query.get("offset")), has_more: query.get("offset") === "0",
+        pages: [{ page, url: `/api/documents/doc-1/page/${page}` }],
+        observations: [observation({ page })],
+      })));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<DocumentDetail documentId="doc-1" patient={patient} initialPage={21} onBack={() => {}} />);
+    await screen.findByRole("img", { name: "Page 21 of the Lab report" });
+    await user.click(screen.getByRole("button", { name: "Next results" }));
+    expect(fetchMock.mock.calls.at(-1)[0]).toBe("/api/documents/doc-1?page=21&offset=100");
+    await screen.findByRole("button", { name: "Previous results" });
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("img", { name: "Page 22 of the Lab report" });
+    expect(fetchMock.mock.calls.at(-1)[0]).toBe("/api/documents/doc-1?page=22&offset=0");
+    await user.click(screen.getByRole("button", { name: "Correct" }));
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next results" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.change(screen.getByLabelText("Page"), { target: { value: "1001" } });
+    await screen.findByRole("img", { name: "Page 1001 of the Lab report" });
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+  });
+
+  it("aborts an old account's detail request and ignores its late response", async () => {
+    let resolveOld;
+    const old = new Promise((resolve) => { resolveOld = resolve; });
+    const fetchMock = vi.fn().mockReturnValueOnce(old).mockResolvedValue(jsonResponse(detailResponse({ observations: [], page_text: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender, unmount } = render(<DocumentDetail documentId="doc-1" patient={patient} onBack={() => {}} />);
+    rerender(<DocumentDetail documentId="doc-2" patient={{ id: "other", alias: "Other" }} onBack={() => {}} />);
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    await act(async () => resolveOld(jsonResponse(detailResponse())));
+    expect(screen.queryByText("HbA1c")).not.toBeInTheDocument();
+    unmount();
+    expect(fetchMock.mock.calls.at(-1)[1].signal.aborted).toBe(true);
   });
 });

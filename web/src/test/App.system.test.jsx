@@ -304,7 +304,7 @@ describe("Dashboard shell", () => {
   it("states the coverage gap verbatim", () => {
     render(<Dashboard data={summary} />);
 
-    const gap = screen.getByText("No data for 10 months").closest(".gap-banner");
+    const gap = screen.getByText("No dated source record for 10 months").closest(".gap-banner");
     expect(gap).not.toBeNull();
     expect(within(gap).getByText("2 Nov 2025 – 12 Sept 2026")).toBeInTheDocument();
   });

@@ -8,9 +8,9 @@ export default function CoverageStrip({ coverage }) {
         <h2 id="coverage-heading" className="eyebrow">
           Coverage
         </h2>
-        <span className="coverage-total">
-          {total} {total === 1 ? "document" : "documents"}
-        </span>
+        <span className="coverage-total">{total} dated {total === 1 ? "document" : "documents"}
+          {coverage.undated_documents ? ` · ${coverage.undated_documents} without a clinical date` : ""}
+          {coverage.future_documents ? ` · ${coverage.future_documents} future-dated` : ""}</span>
       </div>
       <ul className="coverage-list">
         {quarters.map((quarter) => {

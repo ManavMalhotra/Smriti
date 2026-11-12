@@ -91,4 +91,42 @@ describe("Auth", () => {
 
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it.each([
+    ["ab", "test-password", "Username", "3–32 characters"],
+    ["has spaces", "test-password", "Username", "letters, numbers"],
+    ["valid-user", "short", "Password", "8–128 characters"],
+  ])("rejects invalid registration locally: %s", async (username, password, field, message) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<Auth onAuthenticated={() => {}} />);
+    await user.click(screen.getByRole("button", { name: "Create an account" }));
+    await user.type(screen.getByLabelText("Patient alias"), "Synthetic");
+    await user.type(screen.getByLabelText("Username"), username);
+    await user.type(screen.getByLabelText("Password"), password);
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByLabelText(field)).toHaveFocus();
+    expect(screen.getByLabelText(field)).toHaveAttribute("aria-invalid", "true");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("links duplicate errors to username and locks mode while submitting", async () => {
+    let resolve;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise((done) => { resolve = done; })));
+    const user = userEvent.setup();
+    const { container } = render(<Auth onAuthenticated={() => {}} />);
+    await user.click(screen.getByRole("button", { name: "Create an account" }));
+    await user.type(screen.getByLabelText("Patient alias"), "Synthetic");
+    await user.type(screen.getByLabelText("Username"), "taken-user");
+    await user.type(screen.getByLabelText("Password"), "test-password");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("button", { name: "I already have an account" })).toBeDisabled();
+    resolve(jsonResponse({ error: { code: "username_taken", message: "That username is already in use.", field: "username" } }, 409));
+    expect(await screen.findByRole("alert")).toHaveTextContent("already in use");
+    expect(screen.getByLabelText("Username")).toHaveFocus();
+    expect(screen.getByLabelText("Password")).toHaveValue("test-password");
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

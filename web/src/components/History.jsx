@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Panel from "./Panel";
+import SourcePills from "./SourcePills";
 import {
   categoryLabel,
   docTypeLabel,
@@ -59,13 +60,16 @@ export default function History({
   loading = false,
   error = "",
   onOpen,
+  events,
+  onSource,
 }) {
   const [expanded, setExpanded] = useState(false);
-  const entries = buildHistory(reports, documents);
+  const entries = Array.isArray(events) ? events.map((item) => ({ ...item, key: item.id, date: item.event_date,
+    documentId: item.doc_id, page: item.page_num, summary: item.value_text })) : buildHistory(reports, documents);
   const visible = expanded ? entries : entries.slice(0, RECENT);
 
   return (
-    <Panel title="History">
+    <Panel title="Health timeline">
       {loading && !entries.length ? (
         <p className="empty" role="status">
           Loading history…
@@ -88,25 +92,27 @@ export default function History({
               <div className="timeline-body">
                 <div className="timeline-title">
                   <span>{entry.title}</span>
-                  {entry.category ? <span className="pill">{categoryLabel(entry.category)}</span> : null}
+                  {entry.category && !Array.isArray(events) ? <span className="pill">{categoryLabel(entry.category)}</span> : null}
                   {entry.status && entry.status !== "done" ? (
                     <span className="pill">{statusLabel(entry.status)}</span>
                   ) : null}
                 </div>
                 {entry.summary ? <p className="timeline-summary">{entry.summary}</p> : null}
+                {entry.is_backdated_from_summary ? <p className="result-note">Recorded in Discharge Summary ({formatDate(entry.report_date)})</p> : null}
+                {entry.date_needs_review ? <p className="alert">AI date correction — verify the source date.</p> : null}
                 <p className="result-note">
                   {[entry.facility, entry.reviewCount > 0 ? `${entry.reviewCount} to review` : null]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
-                <button
+                {Array.isArray(events) ? <SourcePills item={entry} onSource={onSource} /> : <button
                   type="button"
                   className="text-button"
                   onClick={() => onOpen?.(entry.documentId, entry.page)}
                   aria-label={`Open ${entry.title} from ${formatDate(entry.date)}`}
                 >
                   Open source
-                </button>
+                </button>}
               </div>
             </li>
           ))}

@@ -2,13 +2,41 @@ import { lazy, Suspense, useState } from "react";
 import Panel from "./Panel";
 import SourceOverlay from "./SourceOverlay";
 import Value from "./Value";
+import SourcePills from "./SourcePills";
 import { formatDate, formatRange, shortId } from "../lib/format";
 
 // Recharts only loads when a result actually has a trend to draw.
 const TrendChart = lazy(() => import("./TrendChart"));
 
-export default function Results({ results = [] }) {
+// One analyte can have several unit series, so the unit is part of the identity.
+const seriesKey = (result) =>
+  `${result.analyte_id}-${result.unit || "none"}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+const ORGANS = { blood_immunity: "Blood & Immunity", kidneys_renal: "Kidneys", heart_lipids: "Heart & Lipids",
+  sugar_metabolism: "Sugar & Metabolism", liver_digestion: "Liver", thyroid_hormones: "Thyroid",
+  oncology_surgeries: "Oncology", other_general: "Other" };
+
+function isOutOfRange(point) {
+  if (["low", "high", "critical", "positive_finding"].includes(point.abnormal_flag)) return true;
+  if (point.abnormal_flag === "normal") return false;
+  const flag = String(point.flag_printed || "").toLowerCase();
+  if (["h", "high", "l", "low", "critical", "positive"].includes(flag)) return true;
+  return (point.ref_min != null && point.value < point.ref_min) ||
+    (point.ref_max != null && point.value > point.ref_max);
+}
+
+export default function Results({ results = [], organGroups, onSource }) {
   const [source, setSource] = useState(null);
+  const [organ, setOrgan] = useState(null);
+  const [abnormalOnly, setAbnormalOnly] = useState(false);
+  const openSource = onSource ?? setSource;
+  const groups = Object.entries(organGroups ?? {}).filter(([, biomarkers]) => biomarkers.length);
+  const selected = organ && organGroups?.[organ];
+  const organFiltered = results.filter((result) => !selected || selected.some((biomarker) =>
+    biomarker.analyte_id === result.analyte_id && biomarker.unit === result.unit));
+  const outOfRangeCount = results.reduce((count, result) =>
+    count + result.points.filter(isOutOfRange).length, 0);
+  const visible = organFiltered.filter((result) => !abnormalOnly || result.points.some(isOutOfRange));
   const reviewCount = results.reduce(
     (count, result) =>
       count + result.points.filter((point) => point.status === "review").length,
@@ -17,6 +45,16 @@ export default function Results({ results = [] }) {
 
   return (
     <Panel title="Results">
+      {groups.length ? <div className="organ-controls" role="group" aria-label="Result organ groups">
+        <button type="button" className="button-secondary" aria-pressed={!organ} onClick={() => setOrgan(null)}>All</button>
+        {groups.map(([key]) => <button type="button" className="button-secondary" key={key}
+          aria-pressed={organ === key} onClick={() => setOrgan(key)}>{ORGANS[key] ?? "Other"}</button>)}
+      </div> : null}
+      <fieldset className="result-filter-box">
+        <legend>Find values</legend>
+        <label><input type="checkbox" checked={abnormalOnly} onChange={(event) => setAbnormalOnly(event.target.checked)} />
+          Out of reference range <span className="count-badge">{outOfRangeCount}</span></label>
+      </fieldset>
       {reviewCount > 0 ? (
         <p className="result-note" role="note">
           {reviewCount} extracted {reviewCount === 1 ? "value is" : "values are"} awaiting
@@ -25,16 +63,18 @@ export default function Results({ results = [] }) {
       ) : null}
       {results.length === 0 ? (
         <p className="empty">No results recorded.</p>
+      ) : visible.length === 0 ? (
+        <p className="empty">No values match this filter.</p>
       ) : (
-        results.map((result) => (
+        visible.map((result) => (
           <section
             className="result"
-            key={result.analyte_id}
-            aria-labelledby={`result-${result.analyte_id}`}
+            key={seriesKey(result)}
+            aria-labelledby={`result-${seriesKey(result)}`}
           >
             <div className="result-head">
               <div>
-                <h3 id={`result-${result.analyte_id}`}>{result.display}</h3>
+                <h3 id={`result-${seriesKey(result)}`}>{result.display}</h3>
                 <p className="result-ref">
                   Reference{" "}
                   <Value
@@ -50,7 +90,7 @@ export default function Results({ results = [] }) {
 
             {result.points.length > 1 ? (
               <Suspense fallback={null}>
-                <TrendChart result={result} />
+                <TrendChart result={result} onSource={openSource} />
               </Suspense>
             ) : null}
 
@@ -58,7 +98,7 @@ export default function Results({ results = [] }) {
               <table
                 aria-describedby={
                   result.points.some((point) => point.flag_printed)
-                    ? `result-${result.analyte_id}-flag-note`
+                    ? `result-${seriesKey(result)}-flag-note`
                     : undefined
                 }
               >
@@ -67,6 +107,7 @@ export default function Results({ results = [] }) {
                   <tr>
                     <th scope="col">Date</th>
                     <th scope="col">Value</th>
+                    {result.points.some((p) => Object.hasOwn(p, "ref_min")) ? <th scope="col">Reference</th> : null}
                     <th scope="col">Source</th>
                   </tr>
                 </thead>
@@ -83,13 +124,15 @@ export default function Results({ results = [] }) {
                         {point.status === "review" ? (
                           <span className="pill value-status">Review</span>
                         ) : null}
+                        {point.abnormal_flag && !point.flag_printed ? <span className="pill">{point.abnormal_flag}</span> : null}
                       </td>
+                      {result.points.some((p) => Object.hasOwn(p, "ref_min")) ? <td>{formatRange(point.ref_min, point.ref_max)}</td> : null}
                       <td>
                         <button
                           type="button"
                           className="text-button"
                           onClick={() =>
-                            setSource({
+                            openSource({
                               ...point,
                               analyte: result.display,
                               pageUrl: `/api/documents/${point.document_id}/page/${point.page}`,
@@ -99,8 +142,11 @@ export default function Results({ results = [] }) {
                             point.date,
                           )}`}
                         >
-                          Source
+                          [p.{point.page}]
                         </button>
+                        {point.source_anchors?.length > 1 ? <SourcePills item={{ title: result.display,
+                          doc_id: point.document_id, event_date: point.date,
+                          source_anchors: point.source_anchors.slice(1) }} onSource={openSource} /> : null}
                       </td>
                     </tr>
                   ))}
@@ -111,7 +157,7 @@ export default function Results({ results = [] }) {
             {result.points.some((point) => point.flag_printed) ? (
               <p
                 className="result-note"
-                id={`result-${result.analyte_id}-flag-note`}
+                id={`result-${seriesKey(result)}-flag-note`}
               >
                 Flags are shown exactly as printed on the source document.
               </p>
@@ -134,7 +180,7 @@ export default function Results({ results = [] }) {
         ))
       )}
 
-      <SourceOverlay source={source} onClose={() => setSource(null)} />
+      {!onSource ? <SourceOverlay source={source} onClose={() => setSource(null)} /> : null}
     </Panel>
   );
 }

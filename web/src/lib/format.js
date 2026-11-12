@@ -44,11 +44,34 @@ export function docTypeLabel(type) {
   );
 }
 
+export const reportCategories = [
+  "lab",
+  "imaging",
+  "prescription",
+  "discharge",
+  "pathology",
+  "other",
+];
+
+export function categoryLabel(category) {
+  return (
+    {
+      lab: "Lab",
+      imaging: "Imaging",
+      prescription: "Prescription",
+      discharge: "Discharge",
+      pathology: "Pathology",
+      other: "Other",
+    }[category] ?? category
+  );
+}
+
 export function statusLabel(status) {
   return (
     {
       queued: "Queued",
       processing: "Processing",
+      awaiting_cloud_consent: "Review redaction",
       done: "Processed",
       failed: "Failed",
       rejected_quality: "Rejected",

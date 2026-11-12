@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import DocumentDetail from "./pages/DocumentDetail";
 import Intake from "./pages/Intake";
 import Queue from "./pages/Queue";
+import DocumentsLibrary from "./pages/DocumentsLibrary";
 import { requestJson } from "./lib/api";
 import { readRoute, routeHash } from "./lib/navigation";
 
@@ -17,6 +18,7 @@ export default function App() {
   const [timelineLoading, setTimelineLoading] = useState(true);
   const [timelineError, setTimelineError] = useState("");
   const [activeJobs, setActiveJobs] = useState([]);
+  const [cloudReviewAvailable, setCloudReviewAvailable] = useState(false);
   const [route, setRoute] = useState(readRoute);
   const { view, documentId, page: documentPage } = route;
   const routeRef = useRef(route);
@@ -30,7 +32,9 @@ export default function App() {
     const next = { view, documentId, page };
     routeRef.current = next;
     setRoute(next);
-    window.location.hash = routeHash(next);
+    const pageOnly = route.view === "document" && next.view === "document" && route.documentId === next.documentId;
+    if (pageOnly) window.history.replaceState(null, "", routeHash(next));
+    else window.location.hash = routeHash(next);
   }
 
   useEffect(() => {
@@ -96,6 +100,20 @@ export default function App() {
       cancelled = true;
     };
   }, [patient, refresh]);
+
+  useEffect(() => {
+    if (!patient) {
+      setCloudReviewAvailable(false);
+      return;
+    }
+    let cancelled = false;
+    requestJson("/api/auth/features").then((data) => {
+      if (!cancelled) setCloudReviewAvailable(data.cloud_review_available === true);
+    }).catch(() => {
+      if (!cancelled) setCloudReviewAvailable(false);
+    });
+    return () => { cancelled = true; };
+  }, [patient]);
 
   useEffect(() => {
     if (!patient) {
@@ -194,7 +212,7 @@ export default function App() {
   }
 
   function handleOpenDocument(id, page = 1) {
-    documentReturn.current = view === "queue" ? "queue" : "summary";
+    documentReturn.current = view === "queue" || view === "documents" ? view : "summary";
     navigate("document", id, page);
   }
 
@@ -228,7 +246,9 @@ export default function App() {
         onOpenDocument={handleOpenDocument}
         onSignOut={handleLogout}
         onQueue={() => navigate("queue")}
+        onDocuments={() => navigate("documents")}
         navigationGuard={navigationGuard}
+        cloudReviewAvailable={cloudReviewAvailable}
       />
     );
   }
@@ -246,15 +266,26 @@ export default function App() {
         }}
         onSignOut={handleLogout}
         onQueue={() => navigate("queue")}
-        backLabel={documentReturn.current === "queue" ? "Back to queue" : "Back to summary"}
+        backLabel={documentReturn.current === "queue" ? "Back to queue" : documentReturn.current === "documents" ? "Back to documents" : "Back to summary"}
+        onDocuments={() => navigate("documents")}
         onSummary={setSummaryData}
+        cloudReviewAvailable={cloudReviewAvailable}
       />
     );
   }
 
   if (view === "queue") {
     return <Queue key={patient.id} patient={patient} onDone={handleDone}
-      onAdd={() => navigate("intake")} onOpenDocument={handleOpenDocument} onSignOut={handleLogout} />;
+      onAdd={() => navigate("intake")} onOpenDocument={handleOpenDocument} onSignOut={handleLogout}
+      cloudReviewAvailable={cloudReviewAvailable} onDocuments={() => navigate("documents")} />;
+  }
+
+  if (view === "documents") {
+    return <DocumentsLibrary patient={patient} documents={summaryData?.documents ?? []}
+      loading={summaryLoading} error={summaryError} onOpenDocument={handleOpenDocument}
+      onSummary={() => { navigate("summary"); setRefresh((value) => value + 1); }} onAdd={() => navigate("intake")}
+      onQueue={() => navigate("queue")} onSignOut={handleLogout}
+      onUpdated={() => setRefresh((value) => value + 1)} />;
   }
 
   return (
@@ -263,6 +294,7 @@ export default function App() {
       patient={patient}
       onAdd={() => navigate("intake")}
       onQueue={() => navigate("queue")}
+      onDocuments={() => navigate("documents")}
       onOpenDocument={handleOpenDocument}
       onSignOut={handleLogout}
       loading={summaryLoading}
@@ -271,6 +303,8 @@ export default function App() {
       timelineLoading={timelineLoading}
       timelineError={timelineError}
       activeJobs={activeJobs}
+      onSummaryUpdate={setSummaryData}
+      cloudReviewAvailable={cloudReviewAvailable}
     />
   );
 }
