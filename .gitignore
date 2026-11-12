@@ -6,8 +6,16 @@ __pycache__/
 data/*
 !data/analyte_map.csv
 !data/bounds.csv
+!data/models/
+data/models/*
+!data/models/en_dict.txt
 eval/out/
 web/node_modules/
 web/dist/
 .env
 .omc/
+ffcache*
+tmp*/
+pytest-of-*/
+/sample/
+/test-doc/

@@ -1,10 +1,21 @@
 # Software Requirements Specification — Smriti
 
 **Document ID:** SRS-SMR-001
-**Version:** 1.1
-**Date:** 23 October 2026
-**Status:** Frozen for Week 1. Changes via §5.4 only.
+**Version:** 1.4
+**Date:** 7 November 2026
+**Status:** Baseline with user-approved intake/runtime, long-PDF, private observability and owner-only Queue/hash navigation. Connected implementation and synthetic result ledger in `tasks/todo.md`; live rollout, hardware/clinical acceptance and expanded clinical policies remain separately gated. Changes via §5.4 only.
 **Project:** Smriti — Longitudinal Patient Record Intelligence (major project, 16 weeks, 3 members)
+
+### Approved runtime amendment — 7 November 2026
+
+This amendment supersedes earlier mandatory-Qwen failure wording for the approved slice in `tasks/plan.md` §13.9; clinical human review remains mandatory.
+
+- **FR-RUN-19:** Keep the 6 GiB owned-tree ceiling and ≤20-page/≤10-submission FIFO bounds. Serve Qwen with one slot, 4096 context, Q8 K/V caches, CPU mmproj, six CPU threads and no warmup. Request-only images have a 1280px long edge (no upscaling), ≤2048 output tokens and a 240s per-page budget; canonical source images remain unchanged.
+- **FR-RUN-20:** After confirmed Qwen shutdown, operational failure records identity-bound unavailable outcomes for missing printed pages. Keep valid readings and complete OCR, annotate unmatched OCR fields for review without confidence increases, and publish once. Empty valid readings permit OCR-only review. Missing unexplained/corrupt artifacts, revoked consent, capacity failure and unconfirmed shutdown do not permit degraded publication.
+- **FR-RUN-21:** Unexpected coordinator interruption closes admission, reloads and validates durable ownership/checkpoints/artifacts before resuming, and retries with 1–30s interruptible exponential backoff. Stop after ten consecutive failed attempts; cleanup/ownership/corruption fences stop immediately. Announce recovery only after validation succeeds; pause never reopens admission.
+- **FR-JOB-10:** Owner-only Queue/API distinguish partial versus unavailable independent verification and recovering activity. Bounded allowlisted diagnostics record retries/failure codes, never source/model output. Suppress successful job list/detail polls, retain failed request diagnostics.
+
+Acceptance: isolated adapter, corruption, degradation/resume, worker retry/pause, API/privacy and UI regressions, then full backend/frontend suites/build. Real-model/GPU fit, latency/accuracy and live stored-job recovery remain separate gates. References: `docs/qwen-hardware.md`.
 
 ---
 
@@ -12,7 +23,7 @@
 
 ### 1.1 Purpose
 
-This document specifies the functional, non-functional, data, interface, and safety requirements for Smriti v1.1. It is the contract between the three project members and the basis for verification in §4. Every requirement is uniquely identified and testable. A feature that cannot be traced to a requirement and an acceptance check in §4 is not built.
+This document specifies the functional, non-functional, data, interface, and safety requirements for Smriti v1.4. It is the contract between the three project members and the basis for verification in §4. Every requirement is uniquely identified and testable. A feature that cannot be traced to a requirement and an acceptance check in §4 is not built. Local-runtime and 2026-11-07 Queue/fix requirements record the user's approvals, not hardware or clinical verification.
 
 ### 1.2 Scope
 
@@ -74,7 +85,7 @@ The system is designed to run without any cloud dependency for its headline resu
 
 ### 2.1 Product perspective
 
-Smriti is a single-process web application. FastAPI serves the API and the built React bundle. Processing runs as background jobs in the same process. SQLite holds the record. A local OCR pipeline produces text and boxes; rules resolve most rows; an optional text-only resolver handles the residual. Every charted value and every reminder is traceable to a stored source.
+FastAPI serves the API and the built React bundle at one URL. SQLite holds the record. A local OCR pipeline produces text and boxes; rules resolve most rows; an optional text-only resolver handles the residual. Every charted value and every reminder is traceable to a stored source. The approved Phase 1 local-runtime extension replaces same-process expensive processing with one coordinator, disposable preparation/CPU OCR children, and a coordinator-owned local Qwen `llama-server` lifecycle. HTTP intake only validates basic ownership/consent/input limits and spools bounded chunks. No queue service or remote vision runtime is introduced. This extension is specified in `specs/SPEC-runtime-stages.md`; implementation and deployment remain gated by `tasks/plan.md` §12.
 
 ### 2.2 User classes
 
@@ -89,10 +100,10 @@ Smriti is a single-process web application. FastAPI serves the API and the built
 
 | Item | Baseline |
 |---|---|
-| Development and demo machine | Windows 11, 8 GB RAM, NVIDIA GTX 1650 4 GB (not required, not used) |
+| Development and demo machine | Windows 11, 8 GB RAM, NVIDIA GTX 1650 4 GB; approved local verification uses the existing GPU-backed Qwen runtime; actual RAM/VRAM and deadlines remain unverified |
 | Runtime | Python 3.11, Node 20+, SQLite 3 |
 | Browser | Current Chrome, Edge, or Firefox, 1366×768 minimum |
-| Deployment | One Docker image, one process, one URL |
+| Deployment | One Docker image, one URL; local Phase 1 permits supervised stage children, not multiple coordinators. Public demo remains read-only; no new remote/deployment architecture approved |
 | Network | Local pipeline works offline; the resolver path requires outbound HTTPS |
 
 ### 2.4 Design and implementation constraints
@@ -100,8 +111,8 @@ Smriti is a single-process web application. FastAPI serves the API and the built
 | ID | Constraint |
 |---|---|
 | CON-01 | No paid services. Remote use is limited to free-tier models or self-hosted open weights with a documented fallback. |
-| CON-02 | No local vision-language model is deployed. Local processing is limited to OpenCV, Pillow, and PaddleOCR PP-OCRv6_small on CPU. |
-| CON-03 | No GPU requirement. The application must run with no CUDA device present. |
+| CON-02 | Phase 1 local exception: preserve renderer, normalization, configured RapidOCR/Paddle CPU engines, models, prompts and rules. Eligible printed pages receive Qwen reading or explicit unavailable outcomes under FR-RUN-19/20. New model integrations and remote vision remain outside this exception. |
+| CON-03 | API, review, and read-only demo remain usable without CUDA; OCR children must be explicitly CPU-only. Local Qwen may use the GTX 1650. Missing/failed operational verification is visible as degraded review under FR-RUN-20; never claim independent or human verification succeeded. Corruption/consent/cleanup fences remain blocking. |
 | CON-04 | Handwritten content is never auto-charted. |
 | CON-05 | No handwriting fine-tuning, no QLoRA, no local-model comparison as a deliverable. |
 | CON-06 | Backend: FastAPI, Pydantic v2, SQLAlchemy, SQLite. Frontend: Vite, React (JS), Tailwind, Recharts. No TypeScript, no state library, no UI kit. |
@@ -134,7 +145,7 @@ Verification: **T** test, **D** demonstration, **A** analysis, **I** inspection.
 
 | ID | Requirement | Pri | Ver |
 |---|---|---|---|
-| FR-ING-01 | The system shall accept a multipart upload of JPEG, PNG, or PDF and create a `document` row with status `queued`. | M | T |
+| FR-ING-01 | The system shall accept a multipart upload of JPEG, PNG, or PDF after ownership, consent, supported-type, and basic input-limit checks; spool bounded chunks to private disk and return a durable pending submission/job identity. HTTP intake shall not decode, render, normalize, or OCR. Create the `document` row with status `queued` only after durable successful background preparation verifies positive page count and normalized paths. Bound multipart buffers, concurrent spoolers, and total spool capacity. | M | T |
 | FR-ING-02 | The system shall determine `capture_type` server-side from handwriting detection and shall not accept it from the client. | M | T |
 | FR-ING-03 | The system shall reject an image whose short edge is below 1000 px, whose Laplacian variance is below the configured threshold, or whose aspect ratio is implausible, with a re-shoot message and status `rejected_quality`. | M | T |
 | FR-ING-04 | The system shall strip EXIF, correct perspective when a page quad is detected, deskew, apply contrast normalisation, upscale pages below 1500 px on the long edge, and split multi-page PDFs into page images before OCR. | M | T |
@@ -142,7 +153,9 @@ Verification: **T** test, **D** demonstration, **A** analysis, **I** inspection.
 | FR-ING-06 | The system shall record `quality_score`, page count, and the applied preprocessing steps. | S | T |
 | FR-ING-07 | The system shall accept `collection_date` and `doc_date` separately; `collection_date` may be null. | M | T |
 | FR-ING-08 | The system shall return `202` with a `job_id` and process the document asynchronously. | M | T |
-| FR-ING-09 | The system shall create a `consent` row for every document before any processing begins; a document without one shall not be queued. | M | T |
+| FR-ING-09 | Before preparation, the submission shall durably record owner and consent scope, version, grant time, and revocation state. Successful preparation shall atomically create/link document, per-document `consent`, and job, preserving the original grant and rechecking consent validity. No preparation without submission consent; no document processing or egress without its consent row. | M | T |
+| FR-ING-10 | The UI shall accept multiple files, send one upload at a time through the existing endpoint, and show independent uploaded, processing, duplicate, rejected, and failed outcomes with source-document links. One file's rejection shall not discard the remaining files. | M | T |
+| FR-ING-11 | Raw upload bytes shall be strictly ephemeral in restricted `data/spool/`, excluded from static serving, exports, backups, and git. After committed successful preparation or deterministic rejection (including byte/page/pixel limits, password, invalid/corrupt format, hard quality failure), close handles and immediately unlink; set `spool_deleted_at` only after confirmed removal. Persist/recover pending or failed cleanup separately. Only unexpected parser/renderer crashes with explicit `DEBUG_RETAIN_FAILED_SPOOL=1` may retain raw spools; retained files stay quota-accounted and erasable. Permanent archival/download is rejected for Phase 1. Apply equivalent cleanup to multipart/partial files. | M | T, I |
 
 #### 3.1.2 Projection and egress control
 
@@ -161,11 +174,11 @@ Verification: **T** test, **D** demonstration, **A** analysis, **I** inspection.
 
 | ID | Requirement | Pri | Ver |
 |---|---|---|---|
-| FR-EXT-01 | The system shall run PaddleOCR PP-OCRv6_small on CPU, with PP-OCRv5 mobile as the configured fallback, and store word text with normalised boxes. | M | T |
+| FR-EXT-01 | The system shall store OCR word text with normalized boxes. Historical baseline selected PaddleOCR PP-OCRv6_small with v5 mobile fallback; the approved Phase 1 local exception instead preserves the current configured RapidOCR primary/Paddle initialization-failure fallback and validated PDF text-layer reuse, with explicit CPU-only disposable execution. This is not approval for a model upgrade or a new low-confidence fallback trigger. | M | T |
 | FR-EXT-02 | The system shall assemble OCR words into rows and fields using template rules for printed laboratory reports. | M | T |
 | FR-EXT-03 | The system shall map each extracted value to one of the 30 configured analytes using `analyte_map.csv`, including Indian synonyms and specimen and timing columns. | M | T |
 | FR-EXT-04 | The system shall resolve values that template rules cannot, by constructing a typed projection and consulting the resolver only where FR-EGR passes. | S | T |
-| FR-EXT-05 | The resolver shall use `gemini-3.5-flash-lite` first and `gemini-3.8-flash` only on null, validation failure, or low confidence, with at most one retry. A self-hosted provider may replace either behind the same interface. | S | T |
+| FR-EXT-05 | The resolver and document understanding engine shall use `gemini-3.8-flash-high` with `thinking_level="high"` (with local rules offline fallback). Retries are capped at one. | S | T |
 | FR-EXT-06 | The resolver response shall be a schema-validated mapping from `roi_id` to analyte id, and shall be validated with Pydantic. | M | T |
 | FR-EXT-07 | The system shall treat a model-declared null with a reason as a valid abstention and shall route it to review rather than guessing. | M | T |
 | FR-EXT-08 | The system shall cache every resolver response on disk keyed by projection hash, prompt version, schema version, and model ID; a cache hit shall not produce an outbound call. | M | T |
@@ -267,10 +280,15 @@ Verification: **T** test, **D** demonstration, **A** analysis, **I** inspection.
 
 | ID | Requirement | Pri | Ver |
 |---|---|---|---|
-| FR-JOB-01 | The system shall expose job state, page progress, total pages, and error text at `GET /api/jobs/{id}`. | M | T |
+| FR-JOB-01 | The system shall expose ownership-checked job state, page progress, total pages, stage, document identity, and safe error text at `GET /api/jobs/{id}`, including submissions that do not yet have a document. Preserve historical fields and job identities; unavailable history shall not be fabricated. | M | T |
 | FR-JOB-02 | A failed job shall be retryable without duplicating observations. | M | T |
 | FR-JOB-03 | A job shall not leave a document in a partially charted state; writes shall be transactional per document. | M | T |
 | FR-JOB-04 | The UI shall poll every two seconds while a job is active and stop on a terminal state. | S | T |
+| FR-JOB-05 | Job progress shall expose actual stage, active model, current page, stage-specific completed pages, timestamps, and ordered processing events. Unknown progress shall remain indeterminate; OCR completion shall not imply document completion. | M | T |
+| FR-JOB-06 | The UI shall show concise current activity and expandable timestamped technical events with text and semantic color, keyboard access, and reduced-motion support. Model skips, cache reuse, failures, and interrupted processing shall remain distinguishable from successful inference. | M | T |
+| FR-JOB-07 | Processing events shall be ownership-checked, bounded operational metadata only, retained with the job and removed with its deletion. Logs shall not contain credentials, document text, extracted medical values, patient metadata, images, prompts, or raw model responses. | M | T |
+| FR-JOB-08 | Pending/preparing responses shall expose `document_id: null`, `total_pages: null`, and `stage: "pending_intake" \| "preparing"`; legacy `total` is also null while unknown. At successful promotion keep the same public job ID and populate verified counts/document links. Deferred rejection shall remain terminal and pollable without creating a clinical row. Update API/UI/fixtures together; positive existing document/job-count invariants remain intact. | M | T |
+| FR-JOB-09 | Accepted jobs shall remain discoverable after leaving Upload/reloading through owner-only `GET /api/jobs` and `#/queue`. Independently paginate compact Active (queued/running) and Recent (done/failed) lists, maximum 50 rows; only one selected job loads bounded history. Distinct Summary/Intake/document source-page hash routes shall honor navigation/reload and guard unsent files. Polling shall not overlap, shall stop terminal detail/expired sessions, and shall retain last progress on transient failures. Listing shall never recover/requeue legacy jobs. | M | T |
 
 #### 3.1.13 Handwriting assist
 
@@ -296,14 +314,34 @@ Verification: **T** test, **D** demonstration, **A** analysis, **I** inspection.
 | FR-EVL-07 | The harness shall report handwritten metrics separately and shall verify that no handwritten field has status `auto`. | M | T |
 | FR-EVL-08 | The harness shall report the local-versus-resolver field F1 difference on the consented subset. | C | T |
 
+#### 3.1.15 Account registration
+
+| ID | Requirement | Pri | Ver |
+|---|---|---|---|
+| FR-AUTH-01 | Registration shall enforce the existing username, password, and alias constraints on the client and server, show actionable field-linked errors without echoing submitted values, and create a working session for valid inputs. | M | T |
+| FR-AUTH-02 | Duplicate usernames, server unavailability, and demo read-only responses shall remain actionable without clearing valid form fields. Existing accounts, session security, and legacy-record ownership behavior shall be preserved. | M | T |
+
+#### 3.1.16 Hardware-safe local runtime — approved 2026-11-05
+
+| ID | Requirement | Pri | Ver |
+|---|---|---|---|
+| FR-RUN-01 | Atomically freeze up to `MAX_BATCH_SUBMISSIONS = 10` pending submissions and prepare sequentially without a document page-count rejection. `MAX_WORKSET_PAGES = 20` caps internal execution windows, not uploads. Short documents retain whole-document packing; a longer document runs alone in consecutive bounded ranges, preserving one document/job, original page numbering, document-wide interpretation and final atomic publication. New arrivals cannot join/extend the frozen batch. Retain byte/pixel/quality/ownership/consent checks and finite disk accounting. | M | T |
+| FR-RUN-02 | Admit at most one expensive stage tree at a time. Use disposable spawned preparation/OCR children and hard monotonic deadlines; terminate then wait ≤5s, kill then wait ≤5s, and verify owned-tree exit. Windows supervision shall use a kill-on-close Job Object or recursive child-first `psutil` cleanup with bounded waits/identity checks; the plan selects Job Objects as the primary guard before descendant creation. Advance only after validated artifacts, successful child outcome, and confirmed cleanup. Unconfirmed exit stops admission. Keep short per-page artifact transactions and transactional final medical writes per document. | M | T |
+| FR-RUN-03 | The coordinator shall not retain/load OCR model runtimes. OCR children shall set `CUDA_VISIBLE_DEVICES=""` before lazy ONNX/Paddle imports, explicitly select CPU providers/device and existing thread limits, and report actual engine/provider identity. Existing fallback runs in a separate child after primary-tree exit, not as an overlapping stack. | M | T |
+| FR-RUN-04 | The local coordinator shall own `llama-server`, spawn it for eligible printed verification and confirm tree shutdown at workset exit, including errors/cancellation. An occupied unowned local port is never reused/terminated. Every inference request uses its active `VlmSession`/resolved URL, shared with readiness; no global endpoint fallback. Retain handwritten exclusions/skips and prompts, ≥30s startup and the FR-RUN-19 default 240s request budget; FR-RUN-20 defines visible operational degradation. | M | T |
+
+**Approved long-PDF amendment — 2026-11-05:** the user approved [SPEC-runtime-stages.md §8](../specs/SPEC-runtime-stages.md#8-approved-long-pdf-requirements-amendment--2026-11-05) (“okay proceed”). No page-count rejection; the 25 MiB default byte limit, 50,000,000-pixel per-page limit and quality/privacy checks remain. FR-RUN-02 preparation budgets now apply to bounded ≤20-page ranges (initial 300s each), with a separate finite 300s manifest-inspection budget; heartbeats cannot extend a stalled range. OCR/VLM startup/request budgets and verified cleanup remain unchanged per internal window. Normalized output/artifacts require finite disk accounting, bounded bookkeeping and unchanged document-wide semantics. These requirements supersede the earlier whole-document/page-count admission policy, not its historical approval record. The revised implementation plan in `tasks/plan.md` §13 still awaits review; no live migration/restart/processing is authorized.
+
+**Observability scope selected — 2026-11-05:** the user requested production-oriented logging/monitoring, selected the existing job view plus local files, and explicitly added CMD/terminal panels. Detailed requirements are drafted separately in [SPEC-observability.md](../specs/SPEC-observability.md); they await review. No operator dashboard, public global log endpoint, external logging service or horizontal-scaling claim is authorized. NFR-05/07 privacy and FR-JOB owner boundaries apply to all sinks, including terminals.
+
 ### 3.2 Non-functional requirements
 
 | ID | Requirement | Pri | Ver |
 |---|---|---|---|
 | NFR-01 | A single printed page shall complete local OCR in ≤ 5 s on the baseline machine. | M | T |
-| NFR-02 | The pipeline process shall peak below 3.5 GB resident memory during a batch run. | M | T |
+| NFR-02 | Retain the <3.5 GB resident-memory target for the pipeline coordinator plus active owned stage tree during a batch. Report observed per-process and tree RSS peaks, sample interval/coverage, and system available RAM; summed RSS may double-count shared mappings and sampled peaks do not prove unsampled maxima. This target has not been established for the current Qwen path; do not claim success without measured evidence or relax the threshold based on a failed result. | M | T |
 | NFR-03 | The aggregate dashboard payload shall be served in ≤ 2 s for 40 documents. | M | T |
-| NFR-04 | The application shall start from cold in ≤ 60 s and shall not require a GPU. | M | T |
+| NFR-04 | The API/read-only demo shall start from cold in ≤60s without a GPU; this excludes model-stage startup. The approved local Qwen path follows CON-03 and FR-RUN-04, not a claim of GPU-free mandatory verification. | M | T |
 | NFR-05 | No secret shall appear in client code, the built bundle, logs, or error messages. | M | I |
 | NFR-06 | Uploads shall be stored outside the served static root and shall be addressed by opaque IDs; path traversal shall be rejected. | M | T |
 | NFR-07 | Logs shall never contain a patient name, UHID, phone number, Aadhaar number, share PIN, or payload content. | M | I |
@@ -317,6 +355,7 @@ Verification: **T** test, **D** demonstration, **A** analysis, **I** inspection.
 | NFR-15 | The UI shall remain functional at 1366×768 and at 100 percent and 125 percent browser zoom. | S | D |
 | NFR-16 | The system shall degrade to local-only operation with a visible banner when the resolver is unavailable. | M | D |
 | NFR-17 | The projection schema shall be validated in CI; any outbound string outside the vocabulary shall fail the build. | M | T |
+| NFR-18 | Use pinned `psutil` (no `pynvml`) for 1–2s coordinator RSS, Windows private committed bytes when available, child observed peak RSS, descendant RAM, and system available RAM. Use installed `nvidia-smi` before/during/after stages through one streamed `-l 2` process or nonoverlapping ≥2s queries, each query/initial readiness/stall bounded at 3s. Failed/unavailable GPU readings are null with `reason: "nvidia_smi_unavailable_or_timeout"`. Record stage/attempt, actual engines/pages, timings, operation/cleanup outcomes and sample coverage; bound storage and stop/reap samplers at stage exit. Device-wide dedicated VRAM is not child attribution or shared WDDM RAM. Follow FR-JOB-07/NFR-07 privacy rules. | M | T, D |
 
 ### 3.3 Safety invariants
 
@@ -351,6 +390,8 @@ All boxes are normalised 0–1. All timestamps are ISO 8601 UTC.
 | `egress` | `id`, `document_id`, `payload_sha256`, `model_id`, `prompt_version`, `schema_version`, `outcome`, `reason`, `ts` | One row per attempt, including refusals |
 | `audit` | `id`, `entity`, `entity_id`, `field`, `old`, `new`, `actor`, `ts` | Append-only |
 | `jobs` | `id`, `document_id`, `state`, `page`, `total`, `error`, `ts` | `state` ∈ queued, running, done, failed |
+| `submissions` (approved operational addition) | Public job identity, patient owner, patient-scoped hash, private spool identity/bytes, consent snapshot, requested overrides, pending/preparing/terminal outcome, nullable prepared document link/count, batch position, preparation manifest/progress, cleanup intent/state, `spool_deleted_at` | Exists before clinical document; promotion links to same-ID job; no extracted clinical facts in queue/telemetry. Exact layout is planned in `tasks/plan.md` §12 |
+| `stage_batches` (approved operational addition) | Frozen submission membership/order, coordinator ownership/attempt, workset document membership/page counts, durable checkpoints, bounded stage measurement summaries | Operational only; no rewrite of accounts, clinical rows, human reviews, or existing jobs |
 
 Data rules:
 
@@ -360,6 +401,7 @@ Data rules:
 - DR-04: Rejected observations are retained for evaluation but excluded from all charts and summaries.
 - DR-05: Uploads are gitignored and never committed.
 - DR-06: A projection contains no free text, date, identifier, or patient linkage; this is a property of the schema, not of a filter.
+- DR-07: Preserve existing `document.page_count >= 1` and positive prepared `jobs.total`/non-null document references. Pending submissions are not fake documents. Raw spool cleanup records confirmed absence, not intended deletion; operational rows/artifacts follow owner erasure and do not resurrect deleted jobs/patients. Stage artifacts containing OCR/model data remain private medical data, never operational logs.
 
 ### 3.5 External interface requirements
 
@@ -370,9 +412,13 @@ Data rules:
 | POST | `/api/patients` | Create patient alias |
 | DELETE | `/api/patients/{id}` | Erase all rows and files for one patient; writes one audit row |
 | POST | `/api/documents` | Multipart upload plus `doc_date`, `collection_date`; returns 202 with `job_id` |
-| POST | `/api/documents/{id}/consent` | Record consent scope for one document |
+| POST | `/api/documents/{id}/consent` | Record consent scope or cloud redaction approval |
+| GET | `/api/documents/{id}/redaction-preview` | PII-redacted JPEG previews awaiting cloud approval |
 | GET | `/api/jobs/{id}` | Job state and progress |
-| GET | `/api/patients/{id}/summary` | Whole dashboard payload |
+| GET | `/api/patients/{id}/summary` | Whole dashboard payload with longitudinal summary |
+| GET | `/api/patients/{id}/clinical-summary` | Standardized longitudinal clinical summary |
+| POST | `/api/patients/{id}/clinical-summary/refresh` | Refresh standardized clinical summary (optional use_cloud) |
+| POST | `/api/patients/{id}/cloud-consent` | Record patient-level cloud consent in audit |
 | GET | `/api/patients/{id}/observations?analyte=` | Deep view |
 | GET | `/api/documents/{id}` | Metadata, boxes, image URL, consent and egress state |
 | POST | `/api/observations/{id}/review` | Accept, correct, or reject; writes audit |
@@ -385,6 +431,8 @@ Data rules:
 
 Contract rules: OpenAPI is the source of truth; the summary payload is frozen in Week 2; no observation-bearing endpoint returns a value without its box and document ID. Additions are permitted after Week 2; breaking changes are not.
 
+Approved Phase 1 pre-intake extension: `POST /api/documents` returns 202 with a stable `job_id`, null `document_id`/`pages`/`total_pages`, and pending-intake stage. `GET /api/jobs/{id}` resolves owned submissions as well as historical jobs; unknown legacy `total` is null only for the new states (FR-JOB-08). Existing prepared duplicate-document responses are preserved; active submission duplicates resolve to the existing pending job without creating a second spool or processing run. Coordinated clients must tolerate null counts/no document until promotion; compatibility tests are required before shipping. No raw-download endpoint is added.
+
 #### 3.5.2 Resolver interface (text only)
 
 | Item | Requirement |
@@ -392,8 +440,8 @@ Contract rules: OpenAPI is the source of truth; the summary payload is frozen in
 | Input | A projection object: vocabulary tokens, numbers, `roi_id`s, schema version. No image, no free text |
 | Output | JSON validated by Pydantic: `{ "assignment": { "<roi_id>": "<analyte_id>" }, "abstain_reason": string \| null }` |
 | Providers | `local_rules` (default, no network), `self_hosted` (open weights), `sarvam`, `gemini` (synthetic corpus only) |
-| Fast model | `gemini-3.5-flash-lite` |
-| Escalation model | `gemini-3.8-flash` |
+| Fast model | `gemini-3.8-flash` |
+| Escalation model | `gemini-3.8-flash-high` (`thinking_level="high"`) |
 | Retries | At most one, on null, validation failure, or low confidence |
 | Cache key | SHA-256 of canonical projection JSON + prompt version + schema version + model ID |
 | Timeout | 30 s per call |
@@ -415,7 +463,9 @@ Illustrative response contract:
 |---|---|
 | Filesystem | Uploads, cached responses, and exports under configured paths; uploads outside the static root |
 | SQLite | Single file; foreign keys enabled; WAL mode; one writer |
-| PaddleOCR | PP-OCRv6_small on CPU, with v5 mobile as fallback; no GPU dependency |
+| OCR | Historical Paddle baseline retained as decision history; Phase 1 preserves current configured RapidOCR/Paddle and text-layer path in explicit CPU children (FR-EXT-01, FR-RUN-03) |
+| Local Qwen | Coordinator-owned `llama-server` only for the existing verification path; active session endpoint, finite workset lifetime, no unowned-port reuse |
+| Spool | Restricted `data/spool/`, excluded from static roots/backups; ephemeral lifecycle and confirmed deletion per FR-ING-11 |
 | Build | `npm run build` output mounted by FastAPI at `/` |
 | Profiles | `local-gpu` (full) and `demo` (synthetic corpus, uploads disabled, egress disabled, read-only) |
 
@@ -459,6 +509,8 @@ Illustrative response contract:
 | Requirement group | Module | Primary test | Reported metric |
 |---|---|---|---|
 | FR-ING, FR-JOB | `smriti/ingest.py`, `api/routers/jobs.py` | `tests/test_ingest.py` | Quality-gate rejection rate |
+| FR-JOB-09 | `api/routers/jobs.py`, `Queue.jsx`, `App.jsx`, `navigation.js` | `tests/test_jobs.py`, `Queue.integration.test.jsx`, `App.system.test.jsx`, `navigation.unit.test.js` | Owner isolation, bounded lists/history, navigation/reload/source-page routes, polling/session/terminal behavior |
+| FR-ING-11, FR-JOB-08, FR-RUN, NFR-18, DR-07 | `runtime-stages`: intake, stage coordinator, OCR/VLM, job API/UI | Planned `tests/test_runtime_stages.py`, `tests/test_runtime_telemetry.py`, intake/jobs/DB/UI regressions (`tasks/plan.md` §§12–13) | Confirmed spool/tree cleanup, bounded internal windows with no upload page cap, complete-document semantics/publication, actual timing/RAM/VRAM, explicit unavailable readings; no clinical accuracy claim |
 | FR-EGR | `smriti/egress.py`, `smriti/projection.py` | `tests/test_egress.py` | Zero image egress; review-queue shrink |
 | FR-EXT | `smriti/ocr.py`, `smriti/extract.py`, `smriti/engines.py` | `tests/test_extract.py` | Field F1, CER, cache-hit rate |
 | FR-ASM | `smriti/extract.py` | `tests/test_assembly.py` | Auto-accept precision |
@@ -530,7 +582,7 @@ If the schedule slips, cut in this order: handwriting assist, clinician-view usa
 
 ### 5.3 Out of scope
 
-Handwriting as an auto-charted source; handwritten numeric values; cloud image processing of real documents; full LOINC; cultures, serology, imaging; handwriting fine-tuning; QLoRA; local VLM deployment; local model benchmarking as a deliverable; drift, RCV, or CUSUM; guideline-driven scheduling; conflict resolution; encounter clustering; ABDM or FHIR export; RBAC or multi-tenancy; RAG question answering; chatbots; NLI explanations; Indic TTS; clinic mode; prescription dispensing.
+Handwriting as an auto-charted source; handwritten numeric values; cloud image processing of real documents; full LOINC; cultures, serology, imaging; handwriting fine-tuning; QLoRA; new local VLM deployment beyond the approved existing Qwen lifecycle; local model comparison as a deliverable; drift, RCV, or CUSUM; guideline-driven scheduling; conflict resolution; encounter clustering; ABDM or FHIR export; RBAC or multi-tenancy; RAG question answering; chatbots; NLI explanations; Indic TTS; clinic mode; prescription dispensing. Phase 1 permits resource measurements of the existing pipeline only, after separate real-record authorization; segmentation, inherited-context migrations, clinical revisions, and broader history redesign remain deferred.
 
 ### 5.4 Change control
 
@@ -543,6 +595,8 @@ Handwriting as an auto-charted source; handwritten numeric values; cloud image p
 ---
 
 ## Annex A — Requirement count
+
+The table records baseline v1.1 counts, not a recount of later intake/account additions. Runtime v1.2 adds FR-ING-11, FR-JOB-08, FR-RUN-01…04 (six functional requirements), NFR-18, and DR-07. v1.4 adds the user-approved persistent owner-only Queue/navigation requirement FR-JOB-09; no safety invariant or acceptance threshold is deleted or relaxed. Smart page selection, a dedicated human-review queue/provenance policy, visit-date improvements and medication reconciliation remain specification work after the user selected “Finish fixes first.”
 
 | Group | Count |
 |---|---|
@@ -592,3 +646,5 @@ Handwriting as an auto-charted source; handwritten numeric values; cloud image p
 |---|---|---|
 | 1.0 | 22 Oct 2026 | Baseline: printed-first, local OCR, cloud on redacted pages only, handwriting as a human-gated measured track |
 | 1.1 | 23 Oct 2026 | Egress replaced by typed projection (FR-RED deleted, FR-EGR added); `capture_type` derived server-side; consent table and FR-ING-09; PP-OCRv6_small; handwriting assist with FR-HWR; medication F1 and lexicon coverage; gate tolerances and FR-SAF-06; FR-TIM-09; hashed share PIN; resolver interface rewritten; cut order revised |
+| 1.2 | 5 Nov 2026 | User-approved Phase 1 gates: ephemeral raw spool with confirmed success/rejection deletion and crash-only debug retention; additive operational submissions/batches and deferred document/consent/job promotion with null pending totals; pinned psutil/no pynvml and low-overhead nvidia-smi/null telemetry; frozen ≤10 submissions and ≤20-page whole-document worksets. Scoped same-process/no-local-VLM/CPU-only deployment exceptions, Windows tree cleanup, and unified VLM endpoint. Requirements and implementation plan approved; checklist approval/runtime implementation, live migration/restart, real-record processing, and hardware acceptance remain outstanding. |
+| 1.3 | 5 Nov 2026 | User approved long-PDF requirements: no document page-count rejection; ≤20 internal windows, bounded per-range preparation deadlines and disk/bookkeeping, one document/job and unchanged complete-document semantics/atomic publication. Revised plan/checklist still require review. Logging scope selected: existing job view, CMD/terminal and local files; observability spec is a draft. Original RT-01–03 evidence remains historical; no live deployment or hardware success claimed. |

@@ -4,7 +4,7 @@ Reading order and authority. If two documents disagree, the one higher in this t
 
 | # | Document | Owns | Status |
 |---|---|---|---|
-| 1 | `docs/SRS.md` v1.1 | All requirements: FR, NFR, SI, OR, CON, DR. Thresholds. | **Frozen** |
+| 1 | `docs/SRS.md` v1.4 | All requirements: FR, NFR, SI, OR, CON, DR; approved §13.9 runtime amendment. | **Baseline** |
 | 2 | `specs/CAPABILITY-MAP.md` | Module boundaries, dependencies, gates | **Frozen** |
 | 3 | `specs/SPEC-*.md` (10 files) | How each module is built and tested | **Frozen** |
 | 4 | `tasks/plan.md` | Technical approach, configuration, deployment | Draft |
@@ -21,6 +21,7 @@ Reading order and authority. If two documents disagree, the one higher in this t
 | 15 | `docs/adr.md` | Architecture decision records | Pending |
 | 16 | `docs/demo-viva.md` | Demo script, likely questions, answers | Pending |
 | 17 | `docs/report-outline.md` | Results chapter structure, figure list | Pending |
+| 18 | `docs/qwen-hardware.md` | Dated model/runtime/hardware references and unverified fit/accuracy limits | Researched 2026-11-07 |
 
 ## Authority rule
 

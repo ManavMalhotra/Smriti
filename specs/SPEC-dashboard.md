@@ -36,9 +36,9 @@ api/routers/
 web/src/
   App.jsx
   api/client.js
-  components/Header.jsx, Problems.jsx, Medications.jsx, Results.jsx,
-             Pending.jsx, Documents.jsx, CoverageStrip.jsx, SourceOverlay.jsx
-  pages/Dashboard.jsx, SharedView.jsx
+  components/Header.jsx, StandardizedSummary.jsx, Problems.jsx, Medications.jsx, Results.jsx,
+             Pending.jsx, Documents.jsx, CoverageStrip.jsx, SourceOverlay.jsx, RedactionConsent.jsx
+  pages/Dashboard.jsx, DocumentDetail.jsx, Intake.jsx, Queue.jsx
 ```
 
 `SourceOverlay` is shared with `handwriting-assist`. It consumes the same normalised box, so there is one coordinate system and one review surface, not two (CON-07).
@@ -73,7 +73,9 @@ web/src/
 - **Never** merge medication states (SI-09). Three groups, visibly labelled.
 - **Never** compute an abnormal flag; display the laboratory's printed flag verbatim (FR-TIM-07).
 - **Never** interpret a gap — state its length, not its meaning (FR-TIM-08).
-- **Never** show raw OCR text to the patient. Clinician mode may show it with the source.
+- **Never** show raw OCR text as primary diagnoses to the patient; structured summary must replace raw text dumps.
+- **Never** stick large diagnosis banners to the viewport (`.safety-bar` is static flow, never sticky).
+- **Never** include lab analytes (e.g. Triglycerides, Protein, Globulin) in medication lists.
 - **Never** make the shared view writable, and never omit the intended-use statement from it (FR-SHR-05).
 - **Never** log a share PIN or token (NFR-07).
 

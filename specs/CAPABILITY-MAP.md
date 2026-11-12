@@ -147,3 +147,17 @@ Each `specs/SPEC-<module>.md` contains, in order:
 ## 8. Next
 
 Approve this map, then write `specs/SPEC-intake.md` through `specs/SPEC-evaluation.md` — ten specs, one page each. No code until specs are approved.
+
+### Intake experience extension — 2026-11-04
+
+The approved and locally verified registration, processing visibility, and bulk-upload scope is indexed in [CAPABILITY-MAP-intake-experience.md](CAPABILITY-MAP-intake-experience.md). Its focused specs extend the existing modules without replacing their safety boundaries. Implementation and verification notes are in `tasks/plan.md` §11 and `tasks/todo.md`; real model verification remains open.
+
+### Hardware-safe execution extension — 2026-11-05
+
+The user's selected first phase is the existing pipeline's `runtime-stages` execution boundary: private bounded upload spooling, background page preparation, finite batch admission, disposable CPU OCR processes, owned local Qwen lifecycle, and measured hardware telemetry. Its contract is [SPEC-runtime-stages.md](SPEC-runtime-stages.md). The user approved all four original gates, `tasks/plan.md` §12 and its checklist on 2026-11-05. Subsequently approved long-PDF requirements replace the earlier ≤20-page upload/whole-document lifecycle policy with ≤20 internal windows and one document/job with unchanged complete-document semantics/publication; `docs/SRS.md` v1.3 and `SPEC-intake.md` reflect them. Revised implementation details in `tasks/plan.md` §13 await review; RT-01–03 evidence stays historical. Live migration/restart and real-record processing remain separately gated.
+
+### Observability extension — scope selected 2026-11-05
+
+2026-11-07 approved follow-up (§13.9): existing observability/progress owns `safe-diagnostics`; existing VLM/runtime owns `qwen-fit`; page store/helpers/coordinator own `degraded-verification`; existing service/coordinator own `worker-recovery`. No new service or dependency. SRS FR-RUN-19…21/FR-JOB-10 and the runtime/observability amendments own the contracts; tests/results/references are in `tasks/todo.md` and `docs/qwen-hardware.md`.
+
+One new capability, `observability`, consumes existing job progress and the `runtime-stages` operational event/measurement boundary. It owns privacy-safe correlated logging, bounded local terminal/file sinks and visibility in the existing owner-scoped job view. The user selected job view + files and explicitly requested CMD/terminals; detailed requirements are in [SPEC-observability.md](SPEC-observability.md), **draft awaiting review**. No new operator dashboard, external service or clinical module is introduced. Build order: safe event/sink foundation → existing request/job callers and UI; runtime measurement projection follows supervised runtime integration. Observability must not control clinical outcomes or weaken resource cleanup, so no reverse dependency/cycle is added.

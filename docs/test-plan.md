@@ -1,8 +1,10 @@
 # Test Plan
 
-Status: current for the local P1/P2 slice. The external corpus, ethics, and
-quality-gate measurements are still open; this plan does not claim clinical
-accuracy.
+Status: local P1/P2 plus staged long-PDF/diagnostics synthetic coverage. Current
+run counts and remaining rollout/browser/hardware gates are in `tasks/todo.md`.
+External corpus, ethics and clinical/quality measurements remain open.
+
+Approved §13.9 regressions cover requested launch flags/240s budget, no-upscale source-preserving 1280px requests, bounded/corrupt input, unavailable artifact identity, valid Qwen retention, interrupted degradation-marker recovery without inference retries, OCR-only review without confidence inflation, affected/unaffected FIFO members, cleanup/capacity/consent fences, ten-failure backoff, pause/admission races, diagnostic sink failure, route-prefix poll suppression, and partial/unavailable UI. Tests use temporary databases/synthetic sources and fake model sessions only. Full suites/build and dated results are recorded in `tasks/todo.md`; no real-model fit/accuracy claim.
 
 ## Purpose
 
@@ -17,8 +19,9 @@ in.
 | Integration | Do API, database, worker, filesystem, or page boundaries fit together? | 49 tests | 18 tests |
 | System | Does a complete user journey work through the app surface? | 2 tests | 10 tests |
 
-Counts are a snapshot from 2026-10-24. Update this table when a layer changes
-materially; do not treat the numbers as a quality score.
+These layer counts are the historical 2026-10-24 snapshot, not current totals.
+The dated `tasks/todo.md` result ledger owns current measured counts; overlapping
+focused runs are not additive coverage totals or a quality score.
 
 ## Backend layers
 
@@ -76,9 +79,12 @@ Run:
 .venv\Scripts\python.exe -m pytest -m system
 ```
 
-The system tests deliberately use `TestClient`, not a live Uvicorn process. The
-Windows startup path and `/api/health` are verified separately by `start.ps1`
-and a manual startup check.
+System tests deliberately use `TestClient`, not live Uvicorn. Shared upload
+fixtures explicitly prepare after pending acceptance; `tests/staged_runtime.py`
+uses fake owned-stage execution, never a production eager compatibility path.
+Runtime supervisor tests spawn importable synthetic targets without models.
+Startup syntax/launcher sanitization are checked without executing `start.ps1`;
+live startup/migration and hardware/corpus checks require separate authorization.
 
 ## Frontend layers
 
@@ -130,7 +136,7 @@ created by `start.ps1`.
 - `tests/factory.py` creates synthetic images and PDFs. No real patient data is
   committed.
 - `tests/conftest.py` creates a temporary database and upload directory for each
-  test and blocks non-loopback sockets.
+  test, including isolated spool/log roots, and blocks non-loopback sockets.
 - System tests inject a fake OCR engine. PaddleOCR itself is exercised by the
   manual smoke path, not by CI.
 - The default evaluation fixture is synthetic. A perfect score proves the
@@ -149,6 +155,11 @@ created by `start.ps1`.
 | NFR-09 keyboard and accessibility | `a11y.integration.test.jsx`, `App.system.test.jsx` |
 | NFR-12 frozen summary contract | `test_summary.py` |
 | SI-01/SI-02 audit and handwriting invariants | `test_db.py`, `test_system.py` |
+| FR-RUN owned trees, bounded intake/windows, atomic publication/recovery/erasure | `test_runtime_stages.py`, `test_spool.py`, `test_http_intake.py`, `test_preparation.py`, `test_coordinator.py`, `test_publication.py`, `test_erasure.py`, `test_service.py` |
+| Long-PDF complete-document equivalence and bounded review | `test_processing_helpers.py`, `test_model_stages.py`, `test_document_ranges.py`, `DocumentDetail.integration.test.jsx` |
+| Private diagnostics, sampled/unavailable telemetry and committed progress | `test_observability.py`, `test_app_diagnostics.py`, `test_runtime_telemetry.py`, `test_job_progress.py`, `test_jobs.py`, `JobProgress.unit.test.jsx` |
+| FR-JOB-09 persistent owner-only Queue/hash navigation | `test_jobs.py`, `Queue.integration.test.jsx`, `App.system.test.jsx`, `navigation.unit.test.js`: bounded separate list/history pagination, owner/legacy/null-count privacy, terminal/session/connection transitions, abort/nonoverlap, unsent-file guards and source-page URLs |
+| Installed RapidOCR adapter and safe Qwen failure parsing | `test_ocr.py`, `test_vlm.py`, `test_model_stages.py`, `test_job_progress.py`: flat 1.4.4 API/three CPU sessions, transport/HTTP categories, valid empty versus malformed arrays, nonfinite values, null optional metadata, durable code/status and post-commit forwarding; no models initialized |
 | Evaluation harness determinism | `test_eval_smoke.py` |
 
 The full requirement matrix remains in `docs/SRS.md` section 4. This table only
@@ -197,3 +208,8 @@ Frontend:
   remain manual smoke checks.
 - The frontend suite is component/integration heavy; it does not replace a
   real-browser accessibility or cross-device pass.
+- Current runtime/client rendered-browser replay is unavailable with the
+  repository tooling; historical IE screenshots do not verify these changes.
+- Synthetic tests do not establish real Qwen fit/accuracy, arbitrary-length
+  completion or production readiness. Unknown historical v10 cursor formats
+  remain fenced; live rollout/legacy recovery and RT-22 are separately gated.

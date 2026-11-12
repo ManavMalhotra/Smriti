@@ -1,13 +1,13 @@
 # Data Model
 
-Status: draft. Implements SRS §3.4. Schema version 2. Any change here is a migration, not an edit.
+Status: draft. Implements SRS §3.4. Schema v11 adds operational staging and relaxes operational page/window counts without rebuilding v9 clinical tables. See `specs/SPEC-runtime-stages.md` and the isolated migration evidence in `tasks/todo.md`. Live rollout is separately gated; schema changes use migrations, not resets.
 
 ---
 
 ## 1. Entity relationships
 
 ```
-patient ──1─*── document ──1─*── observation
+patient ──1─*── document ──1─*── report ──1─*── observation
   │                │
   │                ├──1─1── consent
   │                ├──1─*── directive
@@ -29,8 +29,8 @@ audit   (polymorphic, append-only)
 - All timestamps are ISO 8601 UTC strings, stored as `TEXT`.
 - All boxes are `[x0, y0, x1, y1]`, normalised 0–1, stored as JSON `TEXT`.
 - Numeric lab values are stored as **canonical decimal strings** in `value_num TEXT`. Floats are produced only at the API boundary for charts. This keeps `Decimal` exactness end to end.
-- One writer. The worker claims jobs with `BEGIN IMMEDIATE`.
-- Uploaded page images live under `data/uploads/<content_hash>/page_<n>.webp`.
+- One exclusive coordinator freezes at most ten FIFO submissions; SQLite writer transactions fence state changes.
+- New prepared page images live under `data/uploads/<submission-id>/page_<n>.webp`; historical stored paths remain valid.
 - The content hash is `SHA-256(patient_id || NUL || file bytes)`. It is unique globally but patient-scoped in practice, so duplicate detection cannot match another patient's upload.
 
 ## 3. Tables
@@ -86,6 +86,28 @@ The raw token is never stored. The cookie is `HttpOnly`, `SameSite=Strict`, and 
 
 `UNIQUE(content_hash)` makes re-upload idempotent within a patient. Upload stores `doc_type='other'` until the worker classifies the page text. There is no per-page `document` row; pages are files under `image_path`.
 
+### 3.3a `report` (schema v8)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | TEXT | PK |
+| `document_id` | TEXT | FK → document, NOT NULL, ON DELETE CASCADE |
+| `patient_id` | TEXT | FK → patient, NOT NULL, ON DELETE CASCADE |
+| `category` | TEXT | NOT NULL, CHECK in (`lab`,`imaging`,`prescription`,`discharge`,`pathology`,`other`) |
+| `report_type` | TEXT | NOT NULL — original `doc_type`, e.g. `ct`, `lab_report` |
+| `report_date` | TEXT | NULL — the timeline date |
+| `facility_name` | TEXT | NULL |
+| `title` | TEXT | NULL |
+| `summary` | TEXT | NULL — impression or findings slice |
+| `page_start` | INTEGER | NOT NULL, CHECK ≥ 1 |
+| `page_end` | INTEGER | NOT NULL, CHECK ≥ `page_start` |
+| `status` | TEXT | NOT NULL, CHECK in (`auto`,`review`,`rejected`) |
+| `reason` | TEXT | NULL |
+| `model_version` | TEXT | NULL |
+| `created_at` | TEXT | NOT NULL |
+
+One upload can contain several reports. The worker groups consecutive pages by detected date and facility; a page without either continues the current report. A report without a date, or with category `other`, starts in `review`. The report is the timeline item; observations inside it are optional searchable facts.
+
 ### 3.4 `page_text`
 
 | Column | Type | Constraints |
@@ -117,10 +139,12 @@ A document with no row here is never queued (`FR-ING-09`). A revoked row blocks 
 |---|---|---|
 | `id` | TEXT | PK |
 | `document_id` | TEXT | FK → document, NOT NULL |
+| `report_id` | TEXT | FK → report, NULL, ON DELETE SET NULL |
 | `analyte_id` | TEXT | NULL until mapped |
 | `label_raw` | TEXT | NULL — label as printed |
+| `label_norm` | TEXT | NULL — search/group key |
 | `value_num` | TEXT | NULL — canonical decimal string |
-| `value_text` | TEXT | NULL — as printed |
+| `value_text` | TEXT | NULL — as printed or prose |
 | `unit_raw` | TEXT | NULL |
 | `unit_norm` | TEXT | NULL |
 | `ref_low` | TEXT | NULL |
@@ -133,11 +157,15 @@ A document with no row here is never queued (`FR-ING-09`). A revoked row blocks 
 | `status` | TEXT | NOT NULL, CHECK in (`auto`,`review`,`rejected`) |
 | `reason` | TEXT | NULL |
 | `mapping_rule` | TEXT | NULL, CHECK in (`exact`,`synonym`,`unresolved`) |
+| `source` | TEXT | NULL, CHECK in (`text_layer`,`ocr`) |
+| `model_version` | TEXT | NULL |
+| `fact_type` | TEXT | NOT NULL, default `lab`, CHECK in (`lab`,`measurement`,`impression`,`imaging_finding`,`diagnosis`,`recommendation`,`note`,`other`) |
+| `evidence_quote` | TEXT | NULL |
 | `created_at` | TEXT | NOT NULL |
 
 **Invariants enforced by trigger or test:**
 
-- `status='auto'` requires `analyte_id IS NOT NULL` and `value_num IS NOT NULL`.
+- `status='auto'` requires either a mapped numeric value (`analyte_id IS NOT NULL` and `value_num IS NOT NULL`) or a non-null `value_text`.
 - No `auto` row may belong to a document with `capture_type='handwritten'` (SI-01).
 - A handwritten document may only produce observations with `analyte_id IS NULL` (SI-02) — in practice the worker produces none.
 - `ref_low`/`ref_high` are written once and never updated (DR-02).
@@ -216,7 +244,20 @@ Append-only. A state change is an insert, never an update.
 | `reason` | TEXT | NULL |
 | `ts` | TEXT | NOT NULL |
 
-No column can hold payload content. Logging the payload is structurally impossible, not merely forbidden. The current build writes no egress rows because no egress path is wired.
+No column can hold payload content. Logging the payload is structurally impossible, not merely forbidden. When cloud document reading or Gemini review is approved, every outbound call writes an audit row here with `payload_sha256`, `model_id='gemini-3.8-flash-high'`, `outcome`, and `ts`. Document review in the frontend displays these rows under Audit & Cloud Review Logs.
+
+### 3.10a `stage_artifact`
+
+| Column | Type | Constraints |
+|---|---|---|
+| `content_hash` | TEXT | NOT NULL — content hash or entity key |
+| `page` | INTEGER | NOT NULL, CHECK ≥ 1 |
+| `stage` | TEXT | NOT NULL — e.g. `ocr`, `redaction`, `standardized_clinical_summary` |
+| `model_version` | TEXT | NOT NULL |
+| `artifact_json` | TEXT | NOT NULL |
+| `created_at` | TEXT | NOT NULL |
+
+Primary key `(content_hash, page, stage, model_version)`. Caches pipeline intermediate stages and structured clinical summaries without modifying baseline clinical tables.
 
 ### 3.11 `audit`
 
@@ -243,7 +284,11 @@ Append-only. `UPDATE` and `DELETE` are rejected by trigger (NFR-08). Auth login 
 | `page` | INTEGER | NOT NULL, default 0 |
 | `total` | INTEGER | NOT NULL |
 | `error` | TEXT | NULL |
+| `stage` | TEXT | NULL; current operational stage |
+| `progress_json` | TEXT | NULL; bounded operational snapshot/history (v9) |
 | `ts` | TEXT | NOT NULL |
+
+`page` remains the number of completed OCR/text-layer pages. `progress_json` holds current stage/model/page counts, UTC boundary timestamps, terminal monotonic elapsed time, per-attempt verification state, failure context, and at most 500 ordered events. `events_truncated` counts omitted older events; current state survives truncation. Messages are allowlisted operational messages, not medical content or model replies. Historical rows retain null telemetry. Writes update the existing job only, so telemetry cannot recreate a deleted job. Document deletion cascades to the job and its history. See `docs/API.md` §5 for the public snapshot fields.
 
 ## 4. Indexes
 
@@ -263,7 +308,7 @@ CREATE UNIQUE INDEX idx_patient_username ON patient(username COLLATE NOCASE)
 CREATE INDEX idx_auth_session_patient ON auth_session(patient_id, expires_at);
 ```
 
-`idx_jobs_state` is the claim index; the worker does `SELECT ... WHERE state='queued' ORDER BY ts LIMIT 1` inside `BEGIN IMMEDIATE`.
+New processing admission uses `idx_submissions_pending`, frozen batch membership and an exclusive coordinator lock; historical queued jobs without submission metadata are not automatically claimed.
 
 ## 5. State machines
 
@@ -286,7 +331,7 @@ directive: open → done | superseded | unknown_date
 
 ## 6. Migrations
 
-`smriti/schema.sql` is the v2 source of truth. `smriti/migrations/002_auth_ocr.sql` upgrades a v1 database:
+`smriti/schema.sql` is the fresh v11 source of truth; `smriti/db.py` applies numbered migrations to older databases. `smriti/migrations/002_auth_ocr.sql` upgrades a v1 database:
 
 - adds `patient.username`, `patient.password_hash`
 - adds `document.doc_type_confidence`, `document.processed_at`
@@ -296,17 +341,29 @@ directive: open → done | superseded | unknown_date
 
 Existing patients, documents, consent, and jobs are preserved. The first registration claims the sole unowned patient. Back up `data/smriti.db` before starting a build that migrates it.
 
+`009_job_progress.sql` adds only nullable `jobs.progress_json` to v8. Existing accounts, sessions, documents, accepted observations, and jobs are preserved; old documents are not reprocessed. Before deployment, stop the server/worker and make a consistent database backup (including SQLite WAL state, or checkpoint it while stopped). Starting the new application applies the migration; do not edit or reset a live database to enable progress history.
+
 ## 7. Deletion
 
-`DELETE /api/patients/{id}` in one transaction:
+`DELETE /api/patients/{id}`:
 
-1. Delete `auth_session`, `handwriting_field`, `directive`, `observation`, `medication`, `egress`, `consent`, `jobs`, `page_text`, and `document` rows for the patient.
-2. Delete files under `data/uploads/<hash>/` for every document.
-3. Insert one `audit` row: `{entity:'patient', entity_id:id, field:'deleted', new:'true'}`.
-4. Do not log what was deleted.
+1. Serialize against owner spooling, revoke consent and pause admission; confirm owned stage/sampler/coordinator exit.
+2. Validate and clean owned spool/debug/partial/scratch/source files while cleanup paths remain in SQLite. Failure returns `503 cleanup_failed`, leaves retry metadata and keeps admission paused.
+3. In the final transaction, record erased frozen-member receipts, delete owned submissions and account/clinical rows, and append the patient deletion audit. Preserve other owners and existing append-only audit; do not refill frozen membership from late arrivals.
+4. Restart the local coordinator only after confirmed cleanup. Do not log deleted medical content.
 
 Backups are not part of the database and must be deleted separately. A surviving backup is a data breach.
 
 ## 8. What is deliberately absent
 
 No external identity provider, no roles, no admin/operator account, no client-side medical-data store, and no implemented share link. Local accounts exist only to isolate patients on one machine. The printed-value review loop is implemented; P3 normalisation/safety and P4 medication/directive state changes are not implemented in this schema version.
+
+## 9. Operational staging (v10/v11)
+
+- `submissions`: owner/public-job identity, private raw path/byte count and patient-scoped hash, consent/overrides, pending/preparing/promoted or terminal state, preparation manifest, progress, frozen batch position and independent cleanup intent/outcome/timestamps. Owner/document FKs are restrictive until explicit cleanup. Prepared page totals are positive with no page-count cap in v11.
+- `stage_batches`: at most ten immutable ordered member IDs, exclusive active-batch guard, fenced coordinator ownership, compact v1 pass/member/next-page/current-window/active-attempt cursor and bounded current-stage measurement summaries. V11 removes the old ten-workset cursor cap, not membership bounds. Unknown historical checkpoint shapes remain fenced; migration preserves them rather than guessing recovery.
+- `output_reservations`: atomically accounts provisional in-flight output/storage headroom. Durable sources/clinical rows still occupy physical disk after scratch/reservations are released.
+- Private `.runtime/<job-id>/` page artifacts/candidate SQLite contain processing evidence, not published clinical rows. Complete-document rules and private report associations precede one fenced atomic clinical save. Terminal/reviewed/populated records are never replacement-written.
+- Job history retains at most 500 code-owned events plus current state/latest failure; bounded JSON constraints remain. File/terminal diagnostics are independent best-effort operator data, not the append-only medical audit and not an account export.
+
+Migration 010 is frozen historical v9→v10; migration 011 rebuilds only the operational submissions/batches to relax counts while preserving rows/FKs/indexes/triggers. Backups exclude raw spool, debug originals, `.runtime` and diagnostic logs. No migration against live data is part of implementation verification.

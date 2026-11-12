@@ -14,6 +14,15 @@ Shrink the human review queue by asking a model to resolve field-assembly ambigu
 
 The unit of egress is not a page. It is a typed projection: a de-identified table of vocabulary tokens and numbers, constructed from an allowlist schema. A person's name cannot be transmitted because the schema has no field that could hold one. This is stricter than SRS v1.0, which permits redacted *images*; stricter is allowed, but §3.5.2 and FR-EXT-05 must be rewritten in v1.1 so the documents do not describe two different systems.
 
+**Implemented Redacted Cloud Pipeline (Gemini 3.8 Flash High):**
+For complex narrative documents and longitudinal synthesis, Smriti implements strict client-consented redacted egress:
+1. PII tokens (names, dates of birth, UHID/MRD, contact details) are detected and black-masked locally.
+2. The user reviews the redacted JPEG previews in a consent modal (`RedactionConsent.jsx`), with the ability to add custom coordinate masks.
+3. Upon approval via `POST /api/documents/{id}/consent` (`CloudConsentCreate`), only locally flattened, EXIF-stripped JPEG windows are sent to `gemini-3.8-flash-high` with `thinking_level="high"`.
+4. Standardized summary synthesis (`smriti/clinical_summary.py`) operates under the same consent gate.
+5. Every egress event records `payload_sha256`, `model_id`, `schema_version`, `outcome`, and `ts` in the `egress` table.
+6. The user can inspect these records in Document Detail under **Audit & Cloud Review Logs**. Original payload text/images are never logged.
+
 This module is **deletable by design.** If it does not earn its keep (§5), it is removed and the project gets simpler.
 
 ## 2. Commands

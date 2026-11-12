@@ -57,6 +57,8 @@ Coverage is a first-class output: the fraction of brand tokens in the corpus tha
 ## 6. Boundaries
 
 - **Never** merge states (SI-09). Not for display, not for a count, not for "current medications".
+- **Never** extract non-medication laboratory analytes (e.g. Triglycerides, Total Protein, Globulin, eGFR, Bilirubin) as brand medications (`NON_MED_WORDS` and `is_valid_medication_name()` guard this boundary).
+- **Never** report older historical prescriptions as current ongoing therapy in longitudinal summaries; current medications are strictly bounded to the latest clinical report date.
 - **Never** infer a stop. Only an explicit prescription or an explicit patient report changes state.
 - **Never** map a brand to a salt silently — show both or show neither.
 - **Never** invent a dose, frequency, or duration the document does not state.
