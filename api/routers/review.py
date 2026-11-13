@@ -107,8 +107,6 @@ def review_observation(
         if row is None:
             api_error(404, "not_found", f"Unknown observation {observation_id}.")
         mapping = row._mapping
-        if mapping["status"] != "review":
-            api_error(409, "already_reviewed", "This field has already been reviewed.")
 
         actor = patient["username"] or patient["alias"]
         old_status = mapping["status"]
@@ -197,6 +195,27 @@ def review_observation(
                 "id": observation_id,
             },
         )
+        if status == "auto" and analyte_id:
+            conn.execute(
+                text(
+                    """
+                    UPDATE observation
+                    SET status = 'rejected',
+                        reason = 'Superseded by human review of duplicate candidate.'
+                    WHERE document_id = :doc_id
+                      AND page = :page
+                      AND analyte_id = :analyte_id
+                      AND id != :id
+                      AND status = 'review'
+                    """
+                ),
+                {
+                    "doc_id": mapping["document_id"],
+                    "page": mapping["page"],
+                    "analyte_id": analyte_id,
+                    "id": observation_id,
+                },
+            )
         if analyte_id != mapping["analyte_id"]:
             audit(
                 conn,
@@ -303,5 +322,38 @@ def review_observation(
         ).first()
         return {
             "observation": _observation(updated),
+            "summary": build_summary(conn, patient["id"]),
+        }
+
+
+@router.post("/bulk-reject-boilerplate")
+def bulk_reject_boilerplate(
+    request: Request,
+    document_id: str | None = None,
+    patient: dict = Depends(current_patient),
+) -> dict:
+    settings = request.app.state.settings
+    if settings.demo:
+        api_error(403, "demo_read_only", "The demo profile is read-only.")
+
+    with request.app.state.engine.begin() as conn:
+        sql = """
+            UPDATE observation
+            SET status = 'rejected',
+                reason = 'Bulk rejected as lab boilerplate / footnote.'
+            WHERE status = 'review'
+              AND (analyte_id IS NULL OR fact_type = 'unassigned')
+              AND document_id IN (SELECT id FROM document WHERE patient_id = :patient_id)
+        """
+        params: dict = {"patient_id": patient["id"]}
+        if document_id:
+            sql += " AND document_id = :document_id"
+            params["document_id"] = document_id
+
+        result = conn.execute(text(sql), params)
+        count = result.rowcount
+        invalidate_patient_digest(conn, patient["id"])
+        return {
+            "rejected_count": count,
             "summary": build_summary(conn, patient["id"]),
         }

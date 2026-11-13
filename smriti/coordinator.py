@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 import uuid
 
 import psutil
@@ -384,10 +385,12 @@ class Coordinator:
                 else:
                     options["request_timeout_seconds"] = self.settings.vlm_request_seconds
                 result = self._run(f"smriti.model_stages:{stage}_target", context, **options)
+                time.sleep(0.05)  # Yield thread to Uvicorn polling endpoints between windows
                 if (stage == "ocr" and result.status == "ocr_initialization_failed"
                         and self.settings.ocr_allow_paddle_fallback):
                     context["backend"] = "paddle"
                     result = self._run("smriti.model_stages:ocr_target", context, **options)
+                    time.sleep(0.05)
                 if not result.success:
                     jobs = [item["job_id"] for item in window["members"]]
                     if stage == "qwen" and result.status in QWEN_OPERATIONAL_FAILURES:

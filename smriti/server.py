@@ -6,7 +6,13 @@ import sys
 
 import uvicorn
 
-from smriti.observability import SafeLogHandler, safe_event, sanitized_logging, terminal_line
+from smriti.observability import (
+    SafeLogHandler,
+    print_startup_banner,
+    safe_event,
+    sanitized_logging,
+    terminal_line,
+)
 
 
 def main():
@@ -16,6 +22,7 @@ def main():
     if not 1 <= options.port <= 65535:
         return 1
     try:
+        print_startup_banner(options.port)
         with sanitized_logging(None):
             uvicorn.run("smriti.main:app", host="127.0.0.1", port=options.port, access_log=False,
                     log_config={"version": 1, "disable_existing_loggers": False,

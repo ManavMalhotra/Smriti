@@ -8,8 +8,34 @@ from dataclasses import dataclass
 from smriti.analytes import analytes
 
 BOILERPLATE_SKIP = "BOILERPLATE_SKIP"
-BOILERPLATE_MARKERS = ("terms & conditions", "supplement suggestions", "download healthians app",
-                      "health advisory", "suggested nutrition")
+BOILERPLATE_MARKERS = (
+    "terms & conditions",
+    "supplement suggestions",
+    "download healthians app",
+    "health advisory",
+    "suggested nutrition",
+    "tax invoice",
+    "bill of supply",
+    "patient bill",
+    "payment receipt",
+    "receipt voucher",
+    "nabl",
+    "accreditation",
+    "pvt. ltd.",
+    "pvt ltd",
+    "circadian variation",
+    "bio ref range",
+    "biological reference interval",
+    "consultant biochemist",
+    "pathologist",
+    "end of report",
+    "not valid for medico-legal",
+    "please correlate clinically",
+    "clinical correlation is recommended",
+    "dr. preeti",
+    "plot 1 & 2",
+    "plot 1 and 2",
+)
 
 
 def is_boilerplate(text: str) -> bool:

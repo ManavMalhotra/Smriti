@@ -47,7 +47,7 @@ VLM_MMPROJ = VLM_DIR / "mmproj-GLM-OCR-Q8_0.gguf"
 VLM_PORT = 8085
 VLM_URL = f"http://127.0.0.1:{VLM_PORT}"
 VLM_ENGINE_NAME = "vlm:glm-ocr-0.9b@q8_0+cuda"
-VLM_CONTEXT_TOKENS = 1536
+VLM_CONTEXT_TOKENS = 2048
 # shortcut: 1280px needs ~10GB of vision activations; 768px runs in ~4s/page on GTX 1650 4GB.
 VLM_IMAGE_LONG_EDGE = 768
 VLM_MAX_TOKENS = 2048
@@ -263,9 +263,13 @@ class VlmSession:
             "99",
             "-c",
             str(VLM_CONTEXT_TOKENS),
+            "-b",
+            "512",
+            "-ub",
+            "256",
+            "--flash-attn",
             "--parallel", "1",
             "-np", "1",
-            "--flash-attn", "off",
             "-t", "4",
             "-ctk", "q8_0",
             "-ctv", "q8_0",

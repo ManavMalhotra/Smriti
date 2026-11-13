@@ -6,8 +6,34 @@ export default function UnassignedFindings({
   results = [],
   timeline = [],
   onOpenDocument,
+  onSummaryUpdate,
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectNotice, setRejectNotice] = useState("");
+
+  const handleBulkReject = async () => {
+    if (!window.confirm("Bulk reject all unassigned lab footnotes and boilerplate text?")) return;
+    setRejecting(true);
+    setRejectNotice("");
+    try {
+      const res = await fetch("/api/observations/bulk-reject-boilerplate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRejectNotice(`Cleaned up ${data.rejected_count} boilerplate items.`);
+        if (data.summary && onSummaryUpdate) {
+          onSummaryUpdate(data.summary);
+        }
+      }
+    } catch {
+      // Best effort
+    } finally {
+      setRejecting(false);
+    }
+  };
 
   // Collect all extracted items not charted in the numerical results
   const items = useMemo(() => {
@@ -49,74 +75,101 @@ export default function UnassignedFindings({
 
   return (
     <Panel title="Other extracted findings">
-      <div className="unassigned-head">
-        <p className="result-note">
-          {items.length} extracted {items.length === 1 ? "value or note is" : "values or notes are"} not
-          plotted on the lab charts.
-        </p>
-      </div>
-
-      <div className="table-wrap">
-        <table>
-          <caption className="sr-only">Extracted findings not plotted on charts</caption>
-          <thead>
-            <tr>
-              <th scope="col">Finding</th>
-              <th scope="col">Extracted text / value</th>
-              <th scope="col">Note</th>
-              <th scope="col">Source</th>
-              {onOpenDocument ? <th scope="col">Action</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {displayed.map((item) => (
-              <tr key={item.id}>
-                <td>
-                  <strong>{item.label}</strong>
-                </td>
-                <td>
-                  <span className="mono">
-                    {item.value}
-                    {item.unit ? ` ${item.unit}` : ""}
-                  </span>
-                </td>
-                <td>
-                  <span className="pill">{item.reason}</span>
-                </td>
-                <td>
-                  <span className="doc-id">
-                    #{shortId(item.document_id)} · Page {item.page}
-                  </span>
-                </td>
-                {onOpenDocument ? (
-                  <td>
-                    <button
-                      type="button"
-                      className="text-button"
-                      onClick={() => onOpenDocument(item.document_id, item.page)}
-                      aria-label={`Open source document for ${item.label}`}
-                    >
-                      View source
-                    </button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {items.length > 5 ? (
-        <div className="unassigned-actions">
+      <details className="unassigned-drawer" open={expanded} onToggle={(e) => setExpanded(e.target.open)}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>
+            {items.length} unassigned {items.length === 1 ? "finding / note" : "findings / notes"} (Click to {expanded ? "collapse" : "expand"})
+          </span>
           <button
             type="button"
-            className="text-button"
-            onClick={() => setExpanded((v) => !v)}
+            className="button-secondary danger"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleBulkReject();
+            }}
+            disabled={rejecting}
+            style={{ fontSize: "12px", padding: "4px 8px" }}
           >
-            {expanded ? "Show less" : `Show all ${items.length} unassigned findings`}
+            {rejecting ? "Cleaning..." : "🧹 Bulk Reject Boilerplate"}
           </button>
+        </summary>
+
+        {rejectNotice ? (
+          <p className="pill success" style={{ margin: "10px 0" }}>
+            {rejectNotice}
+          </p>
+        ) : null}
+
+        <div className="unassigned-head" style={{ marginTop: "12px" }}>
+          <p className="result-note">
+            {items.length} extracted {items.length === 1 ? "value or note is" : "values or notes are"} not
+            plotted on the lab charts.
+          </p>
         </div>
-      ) : null}
+
+        <div className="table-wrap">
+          <table>
+            <caption className="sr-only">Extracted findings not plotted on charts</caption>
+            <thead>
+              <tr>
+                <th scope="col">Finding</th>
+                <th scope="col">Extracted text / value</th>
+                <th scope="col">Note</th>
+                <th scope="col">Source</th>
+                {onOpenDocument ? <th scope="col">Action</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <strong>{item.label}</strong>
+                  </td>
+                  <td>
+                    <span className="mono">
+                      {item.value}
+                      {item.unit ? ` ${item.unit}` : ""}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="pill">{item.reason}</span>
+                  </td>
+                  <td>
+                    <span className="doc-id">
+                      #{shortId(item.document_id)} · Page {item.page}
+                    </span>
+                  </td>
+                  {onOpenDocument ? (
+                    <td>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => onOpenDocument(item.document_id, item.page)}
+                        aria-label={`Open source document for ${item.label}`}
+                      >
+                        View source
+                      </button>
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {items.length > 5 ? (
+          <div className="unassigned-actions" style={{ marginTop: "8px" }}>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "Show fewer" : `Show all ${items.length} unassigned findings`}
+            </button>
+          </div>
+        ) : null}
+      </details>
     </Panel>
   );
 }

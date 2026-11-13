@@ -66,9 +66,11 @@ export default function Dashboard({
       <Header
         patient={view.patient}
         coverage={view.coverage}
+        documents={view.documents}
         onAdd={onAdd}
         onQueue={onQueue}
         onDocuments={onDocuments}
+        onOpenDocument={onOpenDocument}
         onSignOut={onSignOut}
       />
 
@@ -136,9 +138,11 @@ export default function Dashboard({
                   <div className="clinical-meds">
                     <Medications
                       medications={view.medications}
+                      documents={view.documents}
                       timeline={view.medications_timeline}
                       onSource={setSource}
                       onOpenDocument={onOpenDocument}
+                      onSummaryUpdate={onSummaryUpdate || setLocalSummary}
                     />
                   </div>
                   <div className="clinical-results">
@@ -158,6 +162,7 @@ export default function Dashboard({
                     results={view.results}
                     timeline={timeline}
                     onOpenDocument={onOpenDocument}
+                    onSummaryUpdate={onSummaryUpdate || setLocalSummary}
                   />
                 </div>
               </>

@@ -103,3 +103,71 @@ def delete_medication(
             "medication_id": medication_id,
             "summary": build_summary(conn, patient["id"]),
         }
+
+
+@router.post("")
+def create_medication(
+    payload: dict,
+    request: Request,
+    patient: dict = Depends(current_patient),
+) -> dict:
+    if request.app.state.settings.demo:
+        api_error(403, "demo_read_only", "The demo profile is read-only.")
+
+    brand_raw = str(payload.get("brand_raw") or payload.get("name") or "").strip()
+    if not brand_raw:
+        api_error(422, "validation_error", "Medicine name is required.", field="brand_raw")
+
+    dose = str(payload.get("dose") or "").strip() or None
+    freq = str(payload.get("freq") or payload.get("frequency") or "").strip() or None
+    salt = str(payload.get("salt") or "").strip() or None
+    source_doc_id = payload.get("source_doc_id") or None
+    status = payload.get("status") or "prescribed"
+    start_date = payload.get("start_date") or None
+    duration = payload.get("duration") or None
+    prescribed_by = payload.get("prescribed_by") or None
+
+    clinical = {
+        "category": "medication",
+        "duration": duration,
+        "prescribed_by": prescribed_by,
+        "event_date": start_date,
+    }
+
+    import uuid
+    med_id = str(uuid.uuid4())
+    with request.app.state.engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO medication (id, patient_id, brand_raw, salt, dose, freq,
+                                        start_date, status, source_doc_id, clinical_json, engine)
+                VALUES (:id, :patient_id, :brand_raw, :salt, :dose, :freq,
+                        :start_date, :status, :source_doc_id, :clinical_json, 'human_entry')
+            """),
+            {
+                "id": med_id,
+                "patient_id": patient["id"],
+                "brand_raw": brand_raw,
+                "salt": salt,
+                "dose": dose,
+                "freq": freq,
+                "start_date": start_date,
+                "status": status,
+                "source_doc_id": source_doc_id,
+                "clinical_json": json.dumps(clinical),
+            },
+        )
+        actor = patient["username"] or patient["alias"]
+        audit(conn, entity="medication", entity_id=med_id, field="status",
+              old=None, new="created", actor=actor)
+        invalidate_patient_digest(conn, patient["id"])
+
+        created = conn.execute(
+            text("SELECT id, brand_raw, salt, dose, freq, start_date, status, source_doc_id, clinical_json FROM medication WHERE id = :id"),
+            {"id": med_id},
+        ).mappings().one()
+
+        return {
+            "medication": dict(created),
+            "summary": build_summary(conn, patient["id"]),
+        }

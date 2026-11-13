@@ -2,7 +2,16 @@ import CoverageStrip from "./CoverageStrip";
 import Topbar from "./Topbar";
 import { formatDate, formatSex } from "../lib/format";
 
-export default function Header({ patient, coverage, onAdd, onQueue, onDocuments, onSignOut }) {
+export default function Header({
+  patient,
+  coverage,
+  documents = [],
+  onAdd,
+  onQueue,
+  onDocuments,
+  onOpenDocument,
+  onSignOut,
+}) {
   const gap = coverage?.gaps?.[0];
   const meta = [
     patient?.sex ? formatSex(patient.sex) : null,
@@ -40,7 +49,11 @@ export default function Header({ patient, coverage, onAdd, onQueue, onDocuments,
         </div>
       ) : null}
 
-      <CoverageStrip coverage={coverage} />
+      <CoverageStrip
+        coverage={coverage}
+        documents={documents}
+        onOpenDocument={onOpenDocument}
+      />
     </header>
   );
 }

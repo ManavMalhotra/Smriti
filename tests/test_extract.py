@@ -377,3 +377,37 @@ def test_paddle_adapter_maps_boxes(tmp_path: Path):
     assert words[0].text == "HbA1c 8.9 %"
     assert words[0].bbox == [0.1, 0.2, 0.5, 0.26]
     assert words[0].confidence == 0.97
+
+
+def test_unit_trailing_l_not_flagged_as_low():
+    extraction = extract_document(
+        [[
+            _word("Potassium", 0.10, 0.05, 0.20),
+            _word("4.5", 0.10, 0.30, 0.10),
+            _word("mmol/L", 0.10, 0.45, 0.15),
+            _word("3.5-5.0", 0.10, 0.65, 0.15),
+        ]],
+        "lab_report",
+        "printed",
+    )
+    field = extraction.fields[0]
+    assert field.analyte_id == "potassium"
+    assert field.value_num == "4.5"
+    assert field.unit_raw == "mmol/L"
+    assert field.flag_printed is None, "Trailing L in mmol/L must not be parsed as Low flag"
+
+
+def test_reference_subtable_rows_rejected():
+    extraction = extract_document(
+        [[
+            _word("Normal", 0.10, 0.05, 0.20),
+            _word("<100", 0.10, 0.30, 0.10),
+            _word("Diabetes", 0.20, 0.05, 0.20),
+            _word(">=126", 0.20, 0.30, 0.10),
+            _word("First trimester", 0.30, 0.05, 0.25),
+            _word("0.1-2.5", 0.30, 0.35, 0.15),
+        ]],
+        "lab_report",
+        "printed",
+    )
+    assert len(extraction.fields) == 0, "Reference sub-table guide rows must not be extracted as patient observations"

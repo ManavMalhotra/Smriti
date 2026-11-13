@@ -119,11 +119,156 @@ def safe_event(event: str, *, max_bytes: int = 4096, **fields) -> bytes | None:
     return encoded if len(encoded) + 1 <= max_bytes else None
 
 
+ANSI_RESET = "\033[0m"
+ANSI_BOLD = "\033[1m"
+ANSI_RED = "\033[91m"
+ANSI_GREEN = "\033[92m"
+ANSI_YELLOW = "\033[93m"
+ANSI_BLUE = "\033[94m"
+ANSI_MAGENTA = "\033[95m"
+ANSI_CYAN = "\033[96m"
+ANSI_DIM = "\033[2m"
+
+_LAST_HW_CHECK = 0.0
+_CACHED_HW = None
+
+
+def get_hardware_status() -> dict:
+    global _LAST_HW_CHECK, _CACHED_HW
+    now = time.monotonic()
+    if _CACHED_HW is not None and (now - _LAST_HW_CHECK) < 3.0:
+        return _CACHED_HW
+
+    status = {
+        "ram_total_gb": 8.0,
+        "ram_free_gb": 4.0,
+        "ram_used_gb": 4.0,
+        "vram_total_gb": 4.0,
+        "vram_free_gb": 3.9,
+        "vram_used_gb": 0.1,
+        "gpu_name": "NVIDIA GTX 1650",
+    }
+    try:
+        import psutil
+        m = psutil.virtual_memory()
+        status["ram_total_gb"] = round(m.total / (1024**3), 1)
+        status["ram_free_gb"] = round(m.available / (1024**3), 1)
+        status["ram_used_gb"] = round((m.total - m.available) / (1024**3), 1)
+    except Exception:
+        pass
+
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=name,memory.total,memory.free,memory.used", "--format=csv,nounits,noheader"],
+            timeout=1,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if out:
+            parts = [p.strip() for p in out.split(",")]
+            if len(parts) >= 4:
+                status["gpu_name"] = parts[0]
+                status["vram_total_gb"] = round(float(parts[1]) / 1024, 1)
+                status["vram_free_gb"] = round(float(parts[2]) / 1024, 1)
+                status["vram_used_gb"] = round(float(parts[3]) / 1024, 1)
+            elif len(parts) >= 3:
+                status["vram_total_gb"] = round(float(parts[0]) / 1024, 1)
+                status["vram_free_gb"] = round(float(parts[1]) / 1024, 1)
+                status["vram_used_gb"] = round(float(parts[2]) / 1024, 1)
+    except Exception:
+        pass
+
+    _CACHED_HW = status
+    _LAST_HW_CHECK = now
+    return status
+
+
+def print_startup_banner(port: int = 8000) -> None:
+    hw = get_hardware_status()
+    ram_total = hw["ram_total_gb"]
+    ram_free = hw["ram_free_gb"]
+    ram_used = hw["ram_used_gb"]
+    gpu_name = hw["gpu_name"]
+    vram_total = hw["vram_total_gb"] or 4.0
+    vram_free = hw["vram_free_gb"] or 3.9
+
+    banner = [
+        f"{ANSI_CYAN}{ANSI_BOLD}╔══════════════════════════════════════════════════════════════════╗{ANSI_RESET}",
+        f"{ANSI_CYAN}{ANSI_BOLD}║                SMRITI · CLINICAL LOCAL ENGINE                   ║{ANSI_RESET}",
+        f"{ANSI_CYAN}{ANSI_BOLD}╚══════════════════════════════════════════════════════════════════╝{ANSI_RESET}",
+        f"  {ANSI_GREEN}● URL:{ANSI_RESET}         http://127.0.0.1:{port}/",
+        f"  {ANSI_CYAN}● System RAM:{ANSI_RESET}  {ram_used:.1f} GB used / {ram_total:.1f} GB total ({ram_free:.1f} GB free)",
+        f"  {ANSI_CYAN}● GPU VRAM:{ANSI_RESET}    {gpu_name}: {vram_free:.1f} GB free / {vram_total:.1f} GB total",
+    ]
+    if ram_free < 3.0:
+        banner.append(
+            f"  {ANSI_YELLOW}{ANSI_BOLD}⚠️  HIGH RAM USAGE DETECTED ({ram_used:.1f} GB used). Close Chrome/background apps now for maximum GPU/OCR speed!{ANSI_RESET}"
+        )
+    banner.append("")
+    sys.stdout.write("\n".join(banner) + "\n")
+    sys.stdout.flush()
+
+
 def terminal_line(payload: bytes) -> str:
     event = json.loads(payload)
+    event_name = event.get("event", "")
+    level = event.get("level", "info").lower()
+    ts = event.get("timestamp", "")
+    time_part = ts[11:19] if len(ts) >= 19 else ts
+    msg = event.get("message", "")
+
+    # Stage metadata mapping
+    stage_map = {
+        "pending_intake": ("1", "Intake"),
+        "preparing": ("1", "Intake/Prep"),
+        "inspection": ("1", "Inspection"),
+        "ocr_loading": ("2", "OCR Init"),
+        "ocr": ("2", "RapidOCR"),
+        "classification": ("3", "Classification"),
+        "extraction": ("3", "Extraction"),
+        "qwen_loading": ("4", "VLM Loading"),
+        "qwen": ("4", "GLM/Qwen VLM"),
+        "cross_check": ("4", "Cross-Check"),
+        "saving": ("5", "Publication"),
+        "done": ("5", "Complete"),
+    }
+
+    job_id = event.get("job_id")
+    page = event.get("page")
+    total = event.get("total")
+    stage = event.get("stage")
+
+    hw = get_hardware_status()
+    ram_str = f"RAM: {hw['ram_used_gb']:.1f} GB"
+    vram_str = f"GPU VRAM: {hw['vram_used_gb']:.1f}/{hw['vram_total_gb'] or 4.0:.1f} GB"
+
+    # Color code selection
+    if level == "error" or "failed" in event_name or "error" in event_name:
+        color = ANSI_RED
+    elif level == "warning" or "unavailable" in event_name or "skipped" in event_name:
+        color = ANSI_YELLOW
+    elif event_name in {"intake_accepted", "preparing", "prepared", "inspection", "window_started"}:
+        color = ANSI_CYAN
+    elif event_name in {"ocr_reading", "page_read", "ocr_finished", "qwen_reading", "qwen_page", "cross_check", "cross_checked", "extracting", "saving", "done", "checkpoint"}:
+        color = ANSI_GREEN
+    else:
+        color = ANSI_RESET
+
+    # Detailed progress bar for active jobs
+    if job_id and (page or stage):
+        stage_num, stage_label = stage_map.get(stage, ("?", stage or "Processing"))
+        page_str = f"Page {page}/{total or '?'}" if page else f"Stage {stage_num}/5"
+        pct_str = f" ({(page * 100 // total):d}%)" if page and total and total > 0 else ""
+        short_job = job_id[:8]
+        duration = event.get("duration_ms")
+        speed_str = f" | Speed: {duration / 1000:.1f}s/page" if duration else ""
+        bar = f"{color}{ANSI_BOLD}[JOB #{short_job}] [Stage {stage_num}/5: {stage_label}] {page_str}{pct_str} | {ram_str} | {vram_str}{speed_str}{ANSI_RESET} : {msg}\n"
+        return bar
+
     context = " ".join(f"{key}={value}" for key, value in event.items()
                        if key not in {"schema_version", "timestamp", "level", "message", "event"})
-    return f"{event['timestamp']} {event['level'].upper()} {event['event']} {context}: {event['message']}\n"
+    return f"{color}{time_part} {level.upper():5} [{event_name}]{ANSI_RESET} {context}: {msg}\n"
 
 
 class SafeLogHandler(logging.Handler):

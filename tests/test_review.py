@@ -64,10 +64,10 @@ def test_accept_updates_summary_and_audit(client, app, settings):
 
     again = client.post(
         f"/api/observations/{observation['id']}/review",
-        json={"action": "accept"},
+        json={"action": "correct", "value_num": "9.0", "unit_norm": "%"},
     )
-    assert again.status_code == 409
-    assert again.json()["error"]["code"] == "already_reviewed"
+    assert again.status_code == 200, again.text
+    assert again.json()["observation"]["value_num"] == "9"
 
 
 def test_correct_replaces_value_and_keeps_original_in_audit(client, app, settings):

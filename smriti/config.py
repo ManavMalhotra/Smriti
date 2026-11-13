@@ -57,7 +57,7 @@ class Settings:
     gemini_api_key: str | None = field(default=None, repr=False)
     gemini_model_id: str = "gemini-3.8-flash"
     max_batch_submissions: int = MAX_BATCH_SUBMISSIONS
-    max_workset_pages: int = 6
+    max_workset_pages: int = 5
     max_spoolers: int = MAX_SPOOLERS
     debug_retain_failed_spool: bool = False
     preparation_timeout_seconds: float = 300.0

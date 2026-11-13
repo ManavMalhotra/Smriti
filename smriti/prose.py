@@ -165,6 +165,31 @@ _SECTION_PATTERNS = [
 ]
 
 
+_LAB_FOOTNOTE_OR_SIGNATURE = re.compile(
+    r"(?i)\b("
+    r"bio\s*ref(?:\s*erence)?\s*range|"
+    r"circadian\s+variation|"
+    r"nabl(?:\s+accreditation)?|"
+    r"accreditation|"
+    r"pvt\.?\s*ltd\.?|"
+    r"page\s+\d+\s+of\s+\d+|"
+    r"mbbs|"
+    r"consultant\s+biochemist|"
+    r"pathologist|"
+    r"end\s+of\s+report|"
+    r"pregnancy\s+interval|"
+    r"association\s+bio\s+ref|"
+    r"healthians\s+labs|"
+    r"plot\s+1\s*(?:&|and)\s*2|"
+    r"udyog\s+vihar|"
+    r"dr\.?\s+[a-z]+|"
+    r"µiu/m?l|uiu/m?l|ulu/m?l|"
+    r"circulating\s+forms\s+of|"
+    r"biological\s+reference\s+interval"
+    r")\b"
+)
+
+
 def _bbox_for_text_span(words: list[OcrWord], snippet: str) -> list[float]:
     if not words or not snippet:
         return [0.1, 0.1, 0.9, 0.5]
@@ -220,6 +245,13 @@ def extract_prose_sections(
             r"\n(?=[A-Z\s]{4,30}:)", raw_content
         )[0].strip()
 
+        # Bug 2 fix: Block prose extraction on lab educational notes and doctor signatures
+        split_match = _LAB_FOOTNOTE_OR_SIGNATURE.search(clean_content)
+        if split_match:
+            if split_match.start() < 40:
+                continue
+            clean_content = clean_content[:split_match.start()].strip()
+
         if len(clean_content) < 8:
             continue
 
@@ -263,6 +295,14 @@ def extract_prose_with_grounding(
 
         for name, content in candidate_sections.items():
             if not content or len(content.strip()) < 8:
+                continue
+
+            split_match = _LAB_FOOTNOTE_OR_SIGNATURE.search(content)
+            if split_match:
+                if split_match.start() < 40:
+                    continue
+                content = content[:split_match.start()].strip()
+            if len(content) < 8:
                 continue
 
             verdict = verify_grounding(content, text)
