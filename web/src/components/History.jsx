@@ -68,7 +68,7 @@ export default function History({
   const entries = Array.isArray(events) ? events.map((item) => ({ ...item, key: item.id, date: item.event_date,
     documentId: item.doc_id, page: item.page_num, summary: item.value_text })) : buildHistory(reports, documents);
   const visible = expanded ? entries : entries.slice(0, RECENT);
-  const panelTitle = title || (Array.isArray(events) ? "Health timeline" : "History");
+  const panelTitle = title || "Health timeline";
 
   return (
     <Panel title={panelTitle}>

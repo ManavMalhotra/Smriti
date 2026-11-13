@@ -30,12 +30,12 @@ function MedicationRow({ med, onSource, onOpenDocument }) {
 
 export default function Medications({ medications = [], timeline, onSource, onOpenDocument, title }) {
   const [expanded, setExpanded] = useState(false);
-  const panelTitle = title || (timeline && Object.values(timeline).some((items) => items.length) ? "Medications on record" : "Current medications");
+  const panelTitle = title || "Medications on record";
 
   if (timeline && Object.values(timeline).some((items) => items.length)) {
     const active = timeline.active_scheduled ?? [];
     const rest = [
-      ["conditional_sos_or", "Alternative / SOS Meds"],
+      ["conditional_sos_or", "As-needed prescriptions"],
       ["historical_completed", "Earlier prescriptions"],
     ].filter(([key]) => timeline[key]?.length);
     return <Panel title={panelTitle}>
@@ -48,7 +48,7 @@ export default function Medications({ medications = [], timeline, onSource, onOp
           onClick={() => setExpanded((value) => !value)}>{expanded ? "Show fewer" : `Show all ${active.length}`}</button> : null}
       </section> : null}
       {rest.map(([key, groupTitle]) => <details className="state-group compact-med-group" key={key}>
-        <summary><h3>{groupTitle}</h3> <span className="count-badge">{timeline[key].length}</span></summary>
+        <summary>{groupTitle} <span className="count-badge">{timeline[key].length}</span></summary>
         <ul className="list">{timeline[key].map((med) => <MedicationRow key={med.id} med={med}
           onSource={onSource} onOpenDocument={onOpenDocument} />)}</ul>
       </details>)}
@@ -59,15 +59,15 @@ export default function Medications({ medications = [], timeline, onSource, onOp
     .filter(([, items]) => items.length);
   return <Panel title={panelTitle}>
     {!medications.length ? <p className="empty">No medications recorded.</p> : groups.map(([label, items]) => (
-      <section className="state-group" key={label} aria-labelledby={`state-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-        <h3 className="state-heading" id={`state-${label.toLowerCase().replace(/\s+/g, "-")}`}>{label}</h3>
+      <details className="state-group compact-med-group" key={label}>
+        <summary>{label} <span className="count-badge">{items.length}</span></summary>
         <ul className="list">{items.map((med) => <li key={med.id}>
           <p className="item-title">{med.brand_raw}{med.salt ? ` (${med.salt})` : ""}</p>
           <p className="item-meta">{[med.dose, med.freq].filter(Boolean).join(" · ") || "Dose not recorded"}</p>
           {med.source_doc_id ? <button type="button" className="text-button item-source"
             onClick={() => onOpenDocument?.(med.source_doc_id, med.page_num || 1)}>Source · page {med.page_num || 1}</button> : null}
         </li>)}</ul>
-      </section>
+      </details>
     ))}
   </Panel>;
 }

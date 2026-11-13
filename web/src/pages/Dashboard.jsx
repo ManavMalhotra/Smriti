@@ -108,10 +108,6 @@ export default function Dashboard({
                 />
               </div>
             ) : null}
-                  onSource={setSource}
-                />
-              </div>
-            ) : null}
 
             {!hasRecords ? (
               <section className="panel empty-state" aria-labelledby="empty-heading">

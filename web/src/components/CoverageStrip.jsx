@@ -9,7 +9,7 @@ export default function CoverageStrip({ coverage }) {
           Coverage
         </h2>
         <span className="coverage-total">
-          {total} {coverage.undated_documents || coverage.future_documents ? "dated " : ""}{total === 1 ? "document" : "documents"}
+          {total} dated {total === 1 ? "document" : "documents"}
           {coverage.undated_documents ? ` · ${coverage.undated_documents} without a clinical date` : ""}
           {coverage.future_documents ? ` · ${coverage.future_documents} future-dated` : ""}
         </span>
