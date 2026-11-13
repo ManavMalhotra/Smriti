@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from fastapi import Body
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -12,13 +14,32 @@ from sqlalchemy import text
 
 from api.errors import api_error
 from smriti.auth import audit, current_patient, owned_document
+from smriti.clinical_summary import invalidate_patient_digest
 from smriti.http_intake import receive_upload
 from smriti.ingest import record_consent, redaction_preview, record_cloud_consent
-from smriti.models import ConsentCreate, CloudConsentCreate, DocumentUpdate
+from smriti.models import ConsentCreate, CloudConsentCreate, DocumentUpdate, ManualObservationCreate
 from smriti.observability import safe_engine
+from smriti.reports import category_for
 from smriti.spool import SpoolError
+from smriti.summary import build_summary
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+def _decimal_string(raw: str) -> str:
+    try:
+        value = Decimal(str(raw).strip())
+    except (InvalidOperation, AttributeError):
+        api_error(400, "validation_error", "Value must be a number.", field="value_num")
+    if not value.is_finite():
+        api_error(400, "validation_error", "Value must be finite.", field="value_num")
+    if value == 0:
+        return "0"
+    if not -12 <= value.adjusted() <= 12 or len(value.as_tuple().digits) > 15:
+        api_error(400, "validation_error", "Value is outside the range a lab result can have.", field="value_num")
+    canonical = format(value.normalize(), "f")
+    return "0" if canonical in ("-0", "") else canonical
+
 
 @router.patch("/{document_id}")
 def update_document(document_id: str, payload: DocumentUpdate, request: Request,
@@ -47,9 +68,162 @@ def update_document(document_id: str, payload: DocumentUpdate, request: Request,
             for field, old_value, new_value in changed:
                 audit(conn, entity="document", entity_id=document_id, field=field,
                       old=old_value, new=new_value, actor=patient["username"] or patient["alias"])
+
+            # Cascade verified_date / doc_type / facility_name to linked reports
+            if "verified_date" in updates:
+                new_date = updates["verified_date"].isoformat() if hasattr(updates["verified_date"], "isoformat") else updates["verified_date"]
+                conn.execute(text("UPDATE report SET report_date = :rep_date WHERE document_id = :id"),
+                             {"rep_date": new_date, "id": document_id})
+            if "doc_type" in updates and updates["doc_type"]:
+                new_type = updates["doc_type"]
+                new_cat = category_for(new_type)
+                conn.execute(text("UPDATE report SET category = :cat, report_type = :rep_type WHERE document_id = :id"),
+                             {"cat": new_cat, "rep_type": new_type, "id": document_id})
+            if "facility_name" in updates and updates["facility_name"]:
+                conn.execute(text("UPDATE report SET facility_name = :fac WHERE document_id = :id"),
+                             {"fac": updates["facility_name"], "id": document_id})
+
+            invalidate_patient_digest(conn, patient["id"])
+
         current = conn.execute(text("SELECT display_name, doc_type, doc_date, verified_date, facility_name FROM document WHERE id=:id"),
                                {"id": document_id}).mappings().one()
-        return {"document": dict(current)}
+        return {
+            "document": dict(current),
+            "summary": build_summary(conn, patient["id"]),
+        }
+
+
+@router.delete("/{document_id}")
+def delete_document(document_id: str, request: Request,
+                    patient: dict = Depends(current_patient)) -> dict:
+    if request.app.state.settings.demo:
+        api_error(403, "demo_read_only", "The demo profile is read-only.")
+    settings = request.app.state.settings
+    with request.app.state.engine.begin() as conn:
+        doc = owned_document(conn, document_id, patient["id"])
+        image_path = doc._mapping["image_path"]
+
+        # Cascade delete across all linked tables
+        conn.execute(text("DELETE FROM submissions WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM medication WHERE source_doc_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM observation WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM directive WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM report WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM page_text WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM jobs WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM handwriting_field WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM cloud_consent WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM consent WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM egress WHERE document_id = :id"), {"id": document_id})
+        conn.execute(text("DELETE FROM stage_artifact WHERE content_hash = :id OR content_hash = :image_path"),
+                     {"id": document_id, "image_path": image_path})
+        conn.execute(text("DELETE FROM document WHERE id = :id"), {"id": document_id})
+
+        if image_path:
+            root = settings.upload_dir.resolve()
+            target = (root / image_path).resolve()
+            if target != root and root in target.parents and target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+
+        audit(conn, entity="document", entity_id=document_id, field="status",
+              old="active", new="deleted", actor=patient["username"] or patient["alias"])
+        invalidate_patient_digest(conn, patient["id"])
+        return {
+            "deleted": True,
+            "document_id": document_id,
+            "summary": build_summary(conn, patient["id"]),
+        }
+
+
+@router.post("/{document_id}/observations", status_code=201)
+def create_manual_observation(
+    document_id: str,
+    payload: ManualObservationCreate,
+    request: Request,
+    patient: dict = Depends(current_patient),
+) -> dict:
+    if request.app.state.settings.demo:
+        api_error(403, "demo_read_only", "The demo profile is read-only.")
+    with request.app.state.engine.begin() as conn:
+        doc = owned_document(conn, document_id, patient["id"])
+        doc_map = doc._mapping
+        if payload.page > doc_map["page_count"]:
+            api_error(422, "invalid_page", "The source page is outside this document.")
+
+        report_row = conn.execute(
+            text("SELECT id FROM report WHERE document_id = :doc AND page_start <= :page AND page_end >= :page ORDER BY page_start DESC LIMIT 1"),
+            {"doc": document_id, "page": payload.page},
+        ).first()
+        report_id = report_row[0] if report_row else None
+
+        value_num = None
+        if payload.value_num is not None:
+            value_num = _decimal_string(payload.value_num)
+        value_text = payload.value_text or value_num or ""
+        now = datetime.now(timezone.utc).isoformat()
+        obs_id = str(uuid.uuid4())
+        bbox = payload.bbox or [0.0, 0.0, 1.0, 1.0]
+        rule = "exact" if payload.analyte_id else "unresolved"
+
+        conn.execute(
+            text("""
+                INSERT INTO observation (
+                    id, document_id, report_id, analyte_id, label_raw, label_norm,
+                    fact_type, value_num, value_text, unit_raw, unit_norm,
+                    ref_low, ref_high, flag_printed, bbox_json, page,
+                    engine, confidence, status, reason, mapping_rule, source,
+                    model_version, created_at
+                ) VALUES (
+                    :id, :document_id, :report_id, :analyte_id, :label_raw, :label_norm,
+                    'lab', :value_num, :value_text, :unit_raw, :unit_norm,
+                    :ref_low, :ref_high, :flag_printed, :bbox_json, :page,
+                    'human', 1.0, 'auto', 'Added manually by human.', :mapping_rule, NULL,
+                    'human@1.0', :created_at
+                )
+            """),
+            {
+                "id": obs_id,
+                "document_id": document_id,
+                "report_id": report_id,
+                "analyte_id": payload.analyte_id.strip() if payload.analyte_id else None,
+                "label_raw": payload.raw_label.strip(),
+                "label_norm": payload.analyte_id or payload.raw_label.strip().lower(),
+                "value_num": value_num,
+                "value_text": value_text,
+                "unit_raw": payload.unit_norm,
+                "unit_norm": payload.unit_norm.strip() if payload.unit_norm else None,
+                "ref_low": payload.ref_low.strip() if payload.ref_low else None,
+                "ref_high": payload.ref_high.strip() if payload.ref_high else None,
+                "flag_printed": payload.flag.strip() if payload.flag else None,
+                "bbox_json": json.dumps(bbox),
+                "page": payload.page,
+                "mapping_rule": rule,
+                "created_at": now,
+            },
+        )
+        actor = patient["username"] or patient["alias"]
+        audit(conn, entity="observation", entity_id=obs_id, field="status", old=None, new="auto", actor=actor)
+        if value_num:
+            audit(conn, entity="observation", entity_id=obs_id, field="value_num", old=None, new=value_num, actor=actor)
+        invalidate_patient_digest(conn, patient["id"])
+
+        created = conn.execute(
+            text("""
+                SELECT id, document_id, report_id, analyte_id, label_raw, label_norm,
+                       fact_type, evidence_quote, value_num, value_text, unit_raw,
+                       unit_norm, ref_low, ref_high, flag_printed, bbox_json, page,
+                       engine, confidence, status, reason, mapping_rule, source,
+                       model_version, created_at
+                FROM observation WHERE id = :id
+            """),
+            {"id": obs_id},
+        ).mappings().one()
+
+        return {
+            "observation": dict(created),
+            "summary": build_summary(conn, patient["id"]),
+        }
+
 
 @router.post("/{document_id}/quick-entry")
 def save_quick_entry(document_id: str, request: Request, payload: dict = Body(...),

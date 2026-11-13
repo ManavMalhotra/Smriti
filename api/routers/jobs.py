@@ -83,13 +83,19 @@ def retry_job(
     engine = request.app.state.engine
     with engine.begin() as conn:
         owned = conn.execute(
-            text("""SELECT j.id FROM jobs j JOIN document d ON d.id = j.document_id
+            text("""SELECT j.id, d.image_path FROM jobs j JOIN document d ON d.id = j.document_id
                     WHERE j.id = :id AND d.patient_id = :patient_id
                       AND j.state IN ('failed', 'queued')"""),
             {"id": job_id, "patient_id": patient["id"]},
         ).first()
         if owned is None:
             api_error(404, "not_found", f"No retryable job {job_id}.")
+        image_path = owned._mapping.get("image_path")
+        if image_path:
+            root = request.app.state.settings.upload_dir.resolve()
+            target = (root / image_path).resolve()
+            if not target.exists() or not target.is_dir():
+                api_error(409, "file_missing", "Document source files are missing on disk and cannot be retried.")
         try:
             conn.execute(text("""UPDATE submissions SET error_code = NULL, batch_id = NULL, batch_position = NULL
                                  WHERE job_id = :id"""), {"id": job_id})

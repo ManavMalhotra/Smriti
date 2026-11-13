@@ -86,7 +86,7 @@ def cross_check_extractions(
             page_idx = vlm_f.page - 1
             bbox = vlm_f.bbox
             if 0 <= page_idx < len(pages) and pages[page_idx]:
-                bbox = _bbox_for_value(pages[page_idx], vlm_f.value_num or vlm_f.label_raw)
+                bbox = _relocate_vlm_bbox(pages[page_idx], vlm_f)
             checked.append(
                 ExtractedField(
                     analyte_id=vlm_f.analyte_id,
@@ -107,6 +107,43 @@ def cross_check_extractions(
             )
 
     return checked
+
+
+def _relocate_vlm_bbox(words: list[OcrWord], vlm_f: ExtractedField) -> list[float]:
+    """Relocate VLM bounding box using exact value match or RapidFuzz label matching."""
+    if not words:
+        return vlm_f.bbox or [0.0, 0.0, 1.0, 1.0]
+
+    candidate_bbox = None
+    if vlm_f.value_num:
+        candidate_bbox = _bbox_for_value(words, vlm_f.value_num)
+    if candidate_bbox is None or candidate_bbox in ([0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]):
+        candidate_bbox = _bbox_for_value(words, vlm_f.label_raw)
+
+    if candidate_bbox and candidate_bbox not in ([0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]):
+        return candidate_bbox
+
+    try:
+        from rapidfuzz import fuzz
+        from smriti.assembly import _row_groups, _bbox
+        rows = _row_groups(words)
+        best_score = 0.0
+        best_row_bbox = None
+        target_label = vlm_f.label_raw.strip().lower()
+
+        for row_words in rows:
+            row_text = " ".join(w.text for w in row_words).lower()
+            score = fuzz.token_set_ratio(target_label, row_text)
+            if score > best_score:
+                best_score = score
+                best_row_bbox = list(_bbox(row_words))
+
+        if best_score >= 65 and best_row_bbox:
+            return best_row_bbox
+    except Exception:
+        pass
+
+    return candidate_bbox or vlm_f.bbox or [0.0, 0.0, 1.0, 1.0]
 
 
 def _handwritten_pages(quality_json: str | None) -> set[int]:

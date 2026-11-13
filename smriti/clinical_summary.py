@@ -180,3 +180,15 @@ def get_or_synthesize_summary(
     except Exception as exc:
         logger.debug("Could not cache standardized summary: %s", exc)
     return summary
+
+
+def invalidate_patient_digest(conn: Connection, patient_id: str) -> None:
+    """Invalidate cached standardized clinical summary artifact for this patient."""
+    try:
+        conn.execute(
+            text("DELETE FROM stage_artifact WHERE content_hash = :id AND stage = :stage"),
+            {"id": patient_id, "stage": STAGE_NAME},
+        )
+    except Exception as exc:
+        logger.debug("Could not invalidate patient digest: %s", exc)
+

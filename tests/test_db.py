@@ -394,9 +394,11 @@ def test_v8_progress_migration_preserves_accounts_and_review(tmp_path, version):
             assert conn.execute(f"SELECT {columns[table]} FROM {table}").fetchall() == rows
         import re
         after_schema = conn.execute("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('jobs', 'submissions', 'stage_batches') ORDER BY name").fetchall()
-        # Only the approved clinical columns and consent table may differ; all old constraints stay frozen.
-        unchanged = [(kind, name, re.sub(r",\s*(?:clinical_json TEXT|page INTEGER|bbox_json TEXT|engine TEXT)(?=[,)])", "", sql)
-                      if kind == "table" and name in {"observation", "medication"} else sql)
+        # Only the approved clinical columns, document label columns, consent table and trigger human override clauses may differ.
+        unchanged = [(kind, name, re.sub(r",\s*(?:clinical_json TEXT|page INTEGER|bbox_json TEXT|engine TEXT|display_name TEXT|verified_date TEXT)(?=[,)])", "", sql)
+                      if kind == "table" and name in {"observation", "medication", "document"}
+                      else re.sub(r" AND NEW\.engine != 'human'", "", sql) if kind == "trigger" and name.startswith("observation_no_")
+                      else sql)
                      for kind, name, sql in after_schema if name != "cloud_consent"]
         assert unchanged == old_schema
         assert {row[1] for row in conn.execute("PRAGMA table_info(medication)")} >= {"clinical_json", "page", "bbox_json", "engine"}

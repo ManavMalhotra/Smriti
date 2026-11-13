@@ -81,6 +81,10 @@ def rules_target(context, report):
                     if candidate.value_num is not None and page_metadata(settings, row["job_id"], candidate.page)["capture_type"] == "handwritten":
                         excluded += 1
                         continue
+                    from smriti.checks import run_all_checks
+                    check_verdict, check_reason = run_all_checks(candidate.analyte_id, candidate.value_num)
+                    if check_verdict == "review" and check_reason:
+                        candidate = replace(candidate, reason=check_reason)
                     dedup = (candidate.analyte_id or candidate.label_raw.lower(), candidate.value_num or "", candidate.page)
                     key = (candidate.analyte_id or candidate.label_raw).strip().lower()
                 else:

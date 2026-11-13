@@ -103,14 +103,23 @@ class CloudConsentCreate(StrictModel):
                 raise ValueError("Redaction masks must be lists")
             valid_boxes = []
             for box in boxes:
-                if (not isinstance(box, (list, tuple)) or len(box) != 6
-                        or any(type(v) is not int for v in box[:4])
-                        or not isinstance(box[4], str) or not isinstance(box[5], str)
-                        or any(not 0 <= v <= 1000 for v in box[:4])
-                        or box[2] < 1 or box[3] < 1 or box[0] + box[2] > 1000 or box[1] + box[3] > 1000
-                        or len(box[4]) > 100 or not box[5] or len(box[5]) > 80):
+                if not isinstance(box, (list, tuple)):
+                    raise ValueError("Redaction masks must be lists")
+                b = list(box)
+                if len(b) == 4 and all(type(v) is int for v in b):
+                    # Convert [x0, y0, x1, y1] to [x, y, width, height, "custom", "id"]
+                    if b[2] > b[0] and b[3] > b[1]:
+                        b = [b[0], b[1], b[2] - b[0], b[3] - b[1], "custom", "box-1"]
+                    else:
+                        b = [b[0], b[1], b[2], b[3], "custom", "box-1"]
+                if (len(b) != 6
+                        or any(type(v) is not int for v in b[:4])
+                        or not isinstance(b[4], str) or not isinstance(b[5], str)
+                        or any(not 0 <= v <= 1000 for v in b[:4])
+                        or b[2] < 1 or b[3] < 1 or b[0] + b[2] > 1000 or b[1] + b[3] > 1000
+                        or len(b[4]) > 100 or not b[5] or len(b[5]) > 80):
                     raise ValueError("Masks must be [x, y, width, height, label, id] within page bounds")
-                valid_boxes.append(list(box))
+                valid_boxes.append(b)
             cleaned[page_str] = valid_boxes
         if sum(len(boxes) for boxes in cleaned.values()) > 1000:
             raise ValueError("Too many redaction boxes (maximum 1000 allowed)")
@@ -120,10 +129,45 @@ class CloudConsentCreate(StrictModel):
 class ObservationReview(StrictModel):
     action: Literal["accept", "correct", "reject"]
     analyte_id: str | None = Field(default=None, max_length=64)
+    raw_label: str | None = Field(default=None, max_length=256)
     value_num: str | None = Field(default=None, max_length=64)
     value_text: str | None = Field(default=None, max_length=4000)
     unit_norm: str | None = Field(default=None, max_length=32)
+    ref_low: str | None = Field(default=None, max_length=64)
+    ref_high: str | None = Field(default=None, max_length=64)
+    flag: str | None = Field(default=None, max_length=32)
     reason: str | None = Field(default=None, max_length=500)
+
+
+class ManualObservationCreate(StrictModel):
+    raw_label: str = Field(min_length=1, max_length=256)
+    analyte_id: str | None = Field(default=None, max_length=64)
+    value_num: str | None = Field(default=None, max_length=64)
+    value_text: str | None = Field(default=None, max_length=4000)
+    unit_norm: str | None = Field(default=None, max_length=32)
+    ref_low: str | None = Field(default=None, max_length=64)
+    ref_high: str | None = Field(default=None, max_length=64)
+    flag: str | None = Field(default=None, max_length=32)
+    page: int = Field(default=1, ge=1)
+    bbox: list[float] | None = None
+
+    @field_validator("bbox")
+    @classmethod
+    def _valid_box(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        if len(value) != 4 or any(not 0 <= c <= 1 for c in value):
+            raise ValueError("bbox must be four coordinates between 0 and 1")
+        return value
+
+
+class MedicationUpdate(StrictModel):
+    brand_raw: str | None = Field(default=None, max_length=160)
+    salt: str | None = Field(default=None, max_length=160)
+    dose: str | None = Field(default=None, max_length=100)
+    freq: str | None = Field(default=None, max_length=100)
+    status: MedicationStatus | None = None
+    start_date: date | None = None
 
 
 class ReportUpdate(StrictModel):

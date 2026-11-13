@@ -59,6 +59,10 @@ export default function Dashboard({
       />
 
       <main>
+        <div className="doctor-print-header" aria-hidden="true">
+          <h1>Smriti · Clinical Summary Report</h1>
+          <p>Patient: {view.patient?.alias} {view.patient?.uhid ? `· UHID: ${view.patient.uhid}` : ""} · Generated on {new Date().toLocaleDateString("en-GB", { dateStyle: "long" })}</p>
+        </div>
         {loading && !data ? (
           <p className="empty" role="status">
             Loading summary…
@@ -84,8 +88,15 @@ export default function Dashboard({
             ) : null}
             <div className="clinical-grid">
               <div className="clinical-history">
-                <History reports={timeline}
-                  loading={timelineLoading} error={timelineError} onOpen={onOpenDocument} onSource={setSource} />
+                <History
+                  reports={timeline?.length ? timeline : (view.reports || view.master_timeline || [])}
+                  documents={view.documents}
+                  events={view.master_timeline}
+                  loading={timelineLoading}
+                  error={timelineError}
+                  onOpen={onOpenDocument}
+                  onSource={setSource}
+                />
               </div>
               <div className="clinical-meds"><Medications medications={view.medications} timeline={view.medications_timeline} onSource={setSource} onOpenDocument={onOpenDocument} /></div>
               <div className="clinical-results"><Results results={view.results} organGroups={view.organ_groups} onSource={setSource} /></div>

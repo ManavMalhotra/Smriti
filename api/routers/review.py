@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from api.errors import api_error
 from smriti.auth import audit, current_patient
+from smriti.clinical_summary import invalidate_patient_digest
 from smriti.models import ObservationReview
 from smriti.summary import build_summary
 
@@ -108,22 +109,28 @@ def review_observation(
         mapping = row._mapping
         if mapping["status"] != "review":
             api_error(409, "already_reviewed", "This field has already been reviewed.")
-        if mapping["capture_type"] == "handwritten" and payload.action != "reject":
-            api_error(
-                409,
-                "handwriting_review_required",
-                "Handwritten fields need the handwriting review flow.",
-            )
 
         actor = patient["username"] or patient["alias"]
         old_status = mapping["status"]
         old_value = mapping["value_num"]
         old_text = mapping["value_text"]
         old_unit = mapping["unit_norm"]
+        old_label = mapping["label_raw"]
+        old_ref_low = mapping["ref_low"]
+        old_ref_high = mapping["ref_high"]
+        old_flag = mapping["flag_printed"]
+        old_engine = mapping["engine"]
+
         analyte_id = payload.analyte_id.strip() if payload.analyte_id else mapping["analyte_id"]
+        label_raw = payload.raw_label.strip() if payload.raw_label else mapping["label_raw"]
+        ref_low = payload.ref_low.strip() if payload.ref_low is not None else mapping["ref_low"]
+        ref_high = payload.ref_high.strip() if payload.ref_high is not None else mapping["ref_high"]
+        flag_printed = payload.flag.strip() if payload.flag is not None else mapping["flag_printed"]
+
         value_num = old_value
         value_text = old_text
         unit_norm = old_unit
+        engine = "human" if payload.action in ("accept", "correct") else old_engine
 
         if payload.action == "accept":
             if mapping["value_num"] is not None and analyte_id is None:
@@ -135,8 +142,8 @@ def review_observation(
             if payload.unit_norm:
                 unit_norm = payload.unit_norm.strip()
         elif payload.action == "correct":
-            if mapping["value_num"] is not None:
-                if analyte_id is None:
+            if mapping["value_num"] is not None or payload.value_num is not None:
+                if analyte_id is None and not payload.raw_label:
                     api_error(409, "unmapped", "Map this field before correcting it.")
                 if payload.value_num is None:
                     api_error(
@@ -169,7 +176,9 @@ def review_observation(
                 """
                 UPDATE observation
                 SET status = :status, value_num = :value_num, value_text = :value_text,
-                    unit_norm = :unit_norm, reason = :reason, analyte_id = :analyte_id
+                    unit_norm = :unit_norm, reason = :reason, analyte_id = :analyte_id,
+                    label_raw = :label_raw, ref_low = :ref_low, ref_high = :ref_high,
+                    flag_printed = :flag_printed, engine = :engine
                 WHERE id = :id
                 """
             ),
@@ -180,6 +189,11 @@ def review_observation(
                 "unit_norm": unit_norm,
                 "reason": reason,
                 "analyte_id": analyte_id,
+                "label_raw": label_raw,
+                "ref_low": ref_low,
+                "ref_high": ref_high,
+                "flag_printed": flag_printed,
+                "engine": engine,
                 "id": observation_id,
             },
         )
@@ -232,6 +246,48 @@ def review_observation(
                 new=unit_norm,
                 actor=actor,
             )
+        if label_raw != old_label:
+            audit(
+                conn,
+                entity="observation",
+                entity_id=observation_id,
+                field="label_raw",
+                old=old_label,
+                new=label_raw,
+                actor=actor,
+            )
+        if ref_low != old_ref_low:
+            audit(
+                conn,
+                entity="observation",
+                entity_id=observation_id,
+                field="ref_low",
+                old=old_ref_low,
+                new=ref_low,
+                actor=actor,
+            )
+        if ref_high != old_ref_high:
+            audit(
+                conn,
+                entity="observation",
+                entity_id=observation_id,
+                field="ref_high",
+                old=old_ref_high,
+                new=ref_high,
+                actor=actor,
+            )
+        if flag_printed != old_flag:
+            audit(
+                conn,
+                entity="observation",
+                entity_id=observation_id,
+                field="flag_printed",
+                old=old_flag,
+                new=flag_printed,
+                actor=actor,
+            )
+
+        invalidate_patient_digest(conn, patient["id"])
 
         updated = conn.execute(
             text(

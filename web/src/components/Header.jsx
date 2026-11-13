@@ -18,6 +18,9 @@ export default function Header({ patient, coverage, onAdd, onQueue, onDocuments,
         <div className="wordmark">Smriti</div>
         <div className="topbar-actions">
           <span className="topbar-note">Research prototype</span>
+          <button type="button" className="text-button print-btn" onClick={() => window.print()}>
+            Print / Export for Doctor
+          </button>
           {onDocuments ? <button type="button" className="text-button" onClick={onDocuments}>Documents</button> : null}
           {onQueue ? <button type="button" className="text-button" onClick={onQueue}>Queue</button> : null}
           {onAdd ? (

@@ -3,7 +3,7 @@ import Panel from "./Panel";
 import SourceOverlay from "./SourceOverlay";
 import Value from "./Value";
 import SourcePills from "./SourcePills";
-import { formatDate, formatRange, shortId } from "../lib/format";
+import { engineTrustBadge, formatDate, formatRange, shortId } from "../lib/format";
 
 // Recharts only loads when a result actually has a trend to draw.
 const TrendChart = lazy(() => import("./TrendChart"));
@@ -144,6 +144,10 @@ export default function Results({ results = [], organGroups, onSource }) {
                         >
                           [p.{point.page}]
                         </button>
+                        {(() => {
+                          const trust = engineTrustBadge(point.engine, point.status, point.engine === "human");
+                          return <span className={`trust-badge ${trust.className}`} style={{ marginLeft: "6px" }}>{trust.label}</span>;
+                        })()}
                         {point.source_anchors?.length > 1 ? <SourcePills item={{ title: result.display,
                           doc_id: point.document_id, event_date: point.date,
                           source_anchors: point.source_anchors.slice(1) }} onSource={openSource} /> : null}

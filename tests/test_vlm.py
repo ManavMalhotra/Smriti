@@ -233,7 +233,7 @@ def test_invalid_response_envelope_has_specific_safe_code(monkeypatch, tmp_path,
     response.close.assert_called_once()
 
 
-@pytest.mark.parametrize("size,expected", [((1600, 2400), (683, 1024)), ((100, 200), (100, 200))])
+@pytest.mark.parametrize("size,expected", [((1600, 2400), (512, 768)), ((100, 200), (100, 200))])
 def test_request_resizing_preserves_source_and_budget(monkeypatch, tmp_path, size, expected):
     import base64
     import io
@@ -282,10 +282,11 @@ def test_launch_uses_requested_bounded_flags_and_private_output(monkeypatch):
     with vlm.VlmSession():
         pass
     args = spawn.call_args.args[0]
-    for flag, value in [("-c", "4096"), ("-ngl", "99"), ("-t", "6"), ("--parallel", "1"),
+    for flag, value in [("-c", "1536"), ("-ngl", "99"), ("-t", "4"), ("--parallel", "1"),
                         ("--flash-attn", "off")]:
         assert args[args.index(flag) + 1] == value
-    assert "--cache-type-k" not in args and "--cache-type-v" not in args
+    assert "-ctk" in args and args[args.index("-ctk") + 1] == "q8_0"
+    assert "-ctv" in args and args[args.index("-ctv") + 1] == "q8_0"
     # The vision projector stays on the GPU: CPU encoding cost 73s vs 8s per page on a 4 GB card.
     assert "--no-mmproj-offload" not in args
     assert {"--no-warmup", "--offline", "--log-disable"} <= set(args)

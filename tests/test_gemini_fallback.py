@@ -147,7 +147,7 @@ def test_consent_pause_resume_source_masks_and_atomic_publication(monkeypatch, a
     settings = replace(settings, gemini_api_key="fake")
     app.state.settings = settings
     patient = make_patient(client)
-    uploaded = upload(client, patient, jpeg_bytes(text_image())).json()
+    uploaded = upload(client, patient, jpeg_bytes(text_image()), consent_scope="local_plus_projection").json()
     original = model_stages.prepare_cloud_pages
     monkeypatch.setattr(model_stages, "prepare_cloud_pages", lambda engine, settings, row, scratch, _: original(engine, settings, row, scratch, "discharge_summary"))
     calls = []

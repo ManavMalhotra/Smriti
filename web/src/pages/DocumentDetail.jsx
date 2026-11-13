@@ -5,6 +5,7 @@ import { requestJson } from "../lib/api";
 import {
   categoryLabel,
   docTypeLabel,
+  engineTrustBadge,
   formatDate,
   formatRange,
   reportCategories,
@@ -45,6 +46,30 @@ export default function DocumentDetail({
   const [draftValue, setDraftValue] = useState("");
   const [draftUnit, setDraftUnit] = useState("");
   const [draftAnalyteId, setDraftAnalyteId] = useState("");
+  const [draftRawLabel, setDraftRawLabel] = useState("");
+  const [draftRefLow, setDraftRefLow] = useState("");
+  const [draftRefHigh, setDraftRefHigh] = useState("");
+  const [draftFlag, setDraftFlag] = useState("");
+
+  const [showAddObs, setShowAddObs] = useState(false);
+  const [newObsLabel, setNewObsLabel] = useState("");
+  const [newObsAnalyteId, setNewObsAnalyteId] = useState("");
+  const [newObsValue, setNewObsValue] = useState("");
+  const [newObsUnit, setNewObsUnit] = useState("");
+  const [newObsRefLow, setNewObsRefLow] = useState("");
+  const [newObsRefHigh, setNewObsRefHigh] = useState("");
+  const [newObsFlag, setNewObsFlag] = useState("");
+  const [addingObs, setAddingObs] = useState(false);
+  const [addObsError, setAddObsError] = useState("");
+
+  const [editingMedId, setEditingMedId] = useState(null);
+  const [draftMedBrand, setDraftMedBrand] = useState("");
+  const [draftMedDose, setDraftMedDose] = useState("");
+  const [draftMedFreq, setDraftMedFreq] = useState("");
+  const [draftMedStatus, setDraftMedStatus] = useState("prescribed");
+  const [savingMedId, setSavingMedId] = useState(null);
+  const [deletingMedId, setDeletingMedId] = useState(null);
+  const [medError, setMedError] = useState("");
   const [editingReportId, setEditingReportId] = useState(null);
   const [draftReportDate, setDraftReportDate] = useState("");
   const [draftReportCategory, setDraftReportCategory] = useState("other");
@@ -121,6 +146,10 @@ export default function DocumentDetail({
     setDraftValue(observation.value_num ?? observation.value_text ?? "");
     setDraftUnit(observation.unit_norm ?? observation.unit_raw ?? "");
     setDraftAnalyteId(observation.analyte_id ?? "");
+    setDraftRawLabel(observation.label_raw ?? observation.raw_label ?? "");
+    setDraftRefLow(observation.ref_low != null ? String(observation.ref_low) : "");
+    setDraftRefHigh(observation.ref_high != null ? String(observation.ref_high) : "");
+    setDraftFlag(observation.flag_printed ?? "");
   }
 
   function submitCorrection(event, observation) {
@@ -137,10 +166,127 @@ export default function DocumentDetail({
             value_num: draftValue,
             unit_norm: draftUnit || null,
           };
-    if (!observation.analyte_id && draftAnalyteId.trim()) {
+    if (draftAnalyteId.trim() && draftAnalyteId.trim() !== (observation.analyte_id || "")) {
       payload.analyte_id = draftAnalyteId.trim();
     }
+    const origRawLabel = observation.label_raw ?? observation.raw_label ?? "";
+    if (draftRawLabel.trim() && draftRawLabel.trim() !== origRawLabel.trim()) {
+      payload.raw_label = draftRawLabel.trim();
+    }
+    const origRefLow = observation.ref_low != null ? Number(observation.ref_low) : null;
+    const numRefLow = draftRefLow !== "" ? Number(draftRefLow) : null;
+    if (numRefLow !== origRefLow) {
+      payload.ref_low = numRefLow;
+    }
+    const origRefHigh = observation.ref_high != null ? Number(observation.ref_high) : null;
+    const numRefHigh = draftRefHigh !== "" ? Number(draftRefHigh) : null;
+    if (numRefHigh !== origRefHigh) {
+      payload.ref_high = numRefHigh;
+    }
+    const origFlag = observation.flag_printed ?? "";
+    if (draftFlag !== origFlag) {
+      payload.flag_printed = draftFlag || null;
+    }
     review(observation, payload);
+  }
+
+  async function submitManualObservation(event) {
+    event.preventDefault();
+    if (!newObsLabel.trim()) return;
+    setAddingObs(true);
+    setAddObsError("");
+    try {
+      const isNum = !isNaN(Number(newObsValue)) && newObsValue.trim() !== "";
+      const body = {
+        raw_label: newObsLabel.trim(),
+        analyte_id: newObsAnalyteId.trim() || null,
+        value_num: isNum ? Number(newObsValue) : null,
+        value_text: !isNum && newObsValue.trim() ? newObsValue.trim() : null,
+        unit_norm: newObsUnit.trim() || null,
+        ref_low: newObsRefLow !== "" ? Number(newObsRefLow) : null,
+        ref_high: newObsRefHigh !== "" ? Number(newObsRefHigh) : null,
+        flag_printed: newObsFlag.trim() || null,
+        page,
+        bbox: null,
+      };
+      const res = await requestJson(`/api/documents/${documentId}/observations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setDetail((current) => ({
+        ...current,
+        observations: [res.observation, ...(current?.observations || [])],
+      }));
+      onSummary?.(res.summary);
+      setShowAddObs(false);
+      setNewObsLabel("");
+      setNewObsAnalyteId("");
+      setNewObsValue("");
+      setNewObsUnit("");
+      setNewObsRefLow("");
+      setNewObsRefHigh("");
+      setNewObsFlag("");
+    } catch (err) {
+      setAddObsError(err.message || "Failed to add observation.");
+    } finally {
+      setAddingObs(false);
+    }
+  }
+
+  function beginMedEdit(med) {
+    setEditingMedId(med.id);
+    setDraftMedBrand(med.brand_raw || "");
+    setDraftMedDose(med.dose || "");
+    setDraftMedFreq(med.freq || "");
+    setDraftMedStatus(med.status || "prescribed");
+    setMedError("");
+  }
+
+  async function saveMedication(event, med) {
+    event.preventDefault();
+    setSavingMedId(med.id);
+    setMedError("");
+    try {
+      const res = await requestJson(`/api/medications/${med.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_raw: draftMedBrand || null,
+          dose: draftMedDose || null,
+          freq: draftMedFreq || null,
+          status: draftMedStatus || null,
+        }),
+      });
+      setDetail((curr) => ({
+        ...curr,
+        medications: curr.medications.map((m) => (m.id === med.id ? { ...m, ...res.medication } : m)),
+      }));
+      setEditingMedId(null);
+      onSummary?.(res.summary);
+    } catch (err) {
+      setMedError(err.message || "Could not save medication.");
+    } finally {
+      setSavingMedId(null);
+    }
+  }
+
+  async function deleteMedication(med) {
+    if (!window.confirm(`Delete medication "${med.brand_raw}"?`)) return;
+    setDeletingMedId(med.id);
+    setMedError("");
+    try {
+      const res = await requestJson(`/api/medications/${med.id}`, { method: "DELETE" });
+      setDetail((curr) => ({
+        ...curr,
+        medications: curr.medications.filter((m) => m.id !== med.id),
+      }));
+      onSummary?.(res.summary);
+    } catch (err) {
+      setMedError(err.message || "Could not delete medication.");
+    } finally {
+      setDeletingMedId(null);
+    }
   }
 
   function beginReportEdit(report) {
@@ -395,10 +541,111 @@ export default function DocumentDetail({
                         : "Accept, correct, or reject each field against the source document."}
                     </p>
                   </div>
-                  {reviewCount > 0 ? (
-                    <span className="pill">{reviewCount} to review</span>
-                  ) : null}
+                  <div className="button-group">
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => setShowAddObs((v) => !v)}
+                    >
+                      {showAddObs ? "Cancel" : "+ Add Missing Lab / Finding"}
+                    </button>
+                    {reviewCount > 0 ? (
+                      <span className="pill">{reviewCount} to review</span>
+                    ) : null}
+                  </div>
                 </div>
+
+                {showAddObs ? (
+                  <form className="review-form manual-entry-panel" onSubmit={submitManualObservation}>
+                    <h3>Add verified lab finding</h3>
+                    <div className="form-grid two">
+                      <div>
+                        <label htmlFor="new-obs-label">Test name</label>
+                        <input
+                          id="new-obs-label"
+                          value={newObsLabel}
+                          placeholder="e.g. Hemoglobin, Fasting Blood Sugar"
+                          onChange={(e) => setNewObsLabel(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="new-obs-analyte">Analyte ID (optional)</label>
+                        <input
+                          id="new-obs-analyte"
+                          value={newObsAnalyteId}
+                          placeholder="e.g. hemoglobin, fasting_glucose"
+                          onChange={(e) => setNewObsAnalyteId(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-grid two">
+                      <div>
+                        <label htmlFor="new-obs-value">Value</label>
+                        <input
+                          id="new-obs-value"
+                          value={newObsValue}
+                          placeholder="e.g. 13.5"
+                          onChange={(e) => setNewObsValue(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="new-obs-unit">Unit</label>
+                        <input
+                          id="new-obs-unit"
+                          value={newObsUnit}
+                          placeholder="e.g. g/dL, mg/dL"
+                          onChange={(e) => setNewObsUnit(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-grid two">
+                      <div>
+                        <label htmlFor="new-obs-ref-low">Reference low</label>
+                        <input
+                          id="new-obs-ref-low"
+                          type="number"
+                          step="any"
+                          value={newObsRefLow}
+                          placeholder="e.g. 12.0"
+                          onChange={(e) => setNewObsRefLow(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="new-obs-ref-high">Reference high</label>
+                        <input
+                          id="new-obs-ref-high"
+                          type="number"
+                          step="any"
+                          value={newObsRefHigh}
+                          placeholder="e.g. 16.0"
+                          onChange={(e) => setNewObsRefHigh(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <label htmlFor="new-obs-flag">Flag</label>
+                    <select
+                      id="new-obs-flag"
+                      value={newObsFlag}
+                      onChange={(e) => setNewObsFlag(e.target.value)}
+                    >
+                      <option value="">Normal / None</option>
+                      <option value="H">High (H)</option>
+                      <option value="L">Low (L)</option>
+                      <option value="Critical">Critical</option>
+                    </select>
+                    {addObsError ? <p className="alert" role="alert">{addObsError}</p> : null}
+                    <div className="review-actions">
+                      <button type="submit" className="button-primary" disabled={addingObs}>
+                        {addingObs ? "Adding…" : "Add finding"}
+                      </button>
+                      <button type="button" className="text-button" onClick={() => setShowAddObs(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
 
                 {needsHumanReview ? <p className="empty">Automated fields are hidden for this page. Use the source page and enter verified details above.</p> : observations.length > 0 ? (
                   <div className="table-wrap">
@@ -417,6 +664,7 @@ export default function DocumentDetail({
                       <tbody>
                         {observations.map((observation) => {
                           const isSelected = activeObsId === observation.id;
+                          const trust = engineTrustBadge(observation.engine, observation.status, observation.engine === "human");
                           return (
                             <tr
                               key={observation.id}
@@ -435,7 +683,10 @@ export default function DocumentDetail({
                               }}
                             >
                               <td className="field-cell" data-label="Field">
-                                <span className="doc-type">{fieldLabel(observation)}</span>
+                                <div className="timeline-title">
+                                  <span className="doc-type">{fieldLabel(observation)}</span>
+                                  <span className={`trust-badge ${trust.className}`}>{trust.label}</span>
+                                </div>
                                 {!observation.analyte_id && observation.value_num != null ? (
                                   <span className="doc-id">
                                     Not linked to a standard test; reject only.
@@ -482,6 +733,12 @@ export default function DocumentDetail({
                                         value={draftUnit}
                                         onChange={(event) => setDraftUnit(event.target.value)}
                                       />
+                                      <label htmlFor={`raw-label-${observation.id}`}>Test label</label>
+                                      <input
+                                        id={`raw-label-${observation.id}`}
+                                        value={draftRawLabel}
+                                        onChange={(event) => setDraftRawLabel(event.target.value)}
+                                      />
                                       {!observation.analyte_id ? (
                                         <>
                                           <label htmlFor={`analyte-${observation.id}`}>Analyte ID</label>
@@ -493,6 +750,39 @@ export default function DocumentDetail({
                                           />
                                         </>
                                       ) : null}
+                                      <div className="form-grid two">
+                                        <div>
+                                          <label htmlFor={`ref-low-${observation.id}`}>Reference low</label>
+                                          <input
+                                            id={`ref-low-${observation.id}`}
+                                            type="number"
+                                            step="any"
+                                            value={draftRefLow}
+                                            onChange={(event) => setDraftRefLow(event.target.value)}
+                                          />
+                                        </div>
+                                        <div>
+                                          <label htmlFor={`ref-high-${observation.id}`}>Reference high</label>
+                                          <input
+                                            id={`ref-high-${observation.id}`}
+                                            type="number"
+                                            step="any"
+                                            value={draftRefHigh}
+                                            onChange={(event) => setDraftRefHigh(event.target.value)}
+                                          />
+                                        </div>
+                                      </div>
+                                      <label htmlFor={`flag-${observation.id}`}>Flag</label>
+                                      <select
+                                        id={`flag-${observation.id}`}
+                                        value={draftFlag}
+                                        onChange={(event) => setDraftFlag(event.target.value)}
+                                      >
+                                        <option value="">Normal / None</option>
+                                        <option value="H">High (H)</option>
+                                        <option value="L">Low (L)</option>
+                                        <option value="Critical">Critical</option>
+                                      </select>
                                       <div className="review-actions">
                                         <button
                                           type="submit"
@@ -702,15 +992,86 @@ export default function DocumentDetail({
               {medications.length > 0 ? (
                 <section className="panel" aria-labelledby="review-medications-heading">
                   <h2 id="review-medications-heading">Extracted medications</h2>
+                  {medError ? <p className="alert" role="alert">{medError}</p> : null}
                   <ul className="list">
-                    {medications.map((medication) => (
-                      <li key={medication.id}>
-                        <span>{medication.brand_raw}</span>
-                        <span className="unit">
-                          {[medication.dose, medication.freq].filter(Boolean).join(" · ")}
-                        </span>
-                      </li>
-                    ))}
+                    {medications.map((medication) => {
+                      const trust = engineTrustBadge(medication.engine, medication.status, medication.engine === "human");
+                      return (
+                        <li key={medication.id}>
+                          {editingMedId === medication.id ? (
+                            <form className="review-form" onSubmit={(event) => saveMedication(event, medication)}>
+                              <label htmlFor={`med-brand-${medication.id}`}>Medicine name</label>
+                              <input
+                                id={`med-brand-${medication.id}`}
+                                value={draftMedBrand}
+                                onChange={(e) => setDraftMedBrand(e.target.value)}
+                                required
+                              />
+                              <div className="form-grid two">
+                                <div>
+                                  <label htmlFor={`med-dose-${medication.id}`}>Dose</label>
+                                  <input
+                                    id={`med-dose-${medication.id}`}
+                                    value={draftMedDose}
+                                    onChange={(e) => setDraftMedDose(e.target.value)}
+                                  />
+                                </div>
+                                <div>
+                                  <label htmlFor={`med-freq-${medication.id}`}>Frequency</label>
+                                  <input
+                                    id={`med-freq-${medication.id}`}
+                                    value={draftMedFreq}
+                                    onChange={(e) => setDraftMedFreq(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              <label htmlFor={`med-status-${medication.id}`}>Status</label>
+                              <select
+                                id={`med-status-${medication.id}`}
+                                value={draftMedStatus}
+                                onChange={(e) => setDraftMedStatus(e.target.value)}
+                              >
+                                <option value="prescribed">Prescribed</option>
+                                <option value="reported_ongoing">Reported ongoing</option>
+                                <option value="reported_stopped">Reported stopped</option>
+                                <option value="discontinued">Discontinued</option>
+                              </select>
+                              <div className="review-actions">
+                                <button type="submit" className="button-primary" disabled={savingMedId === medication.id}>
+                                  {savingMedId === medication.id ? "Saving…" : "Save"}
+                                </button>
+                                <button type="button" className="text-button" onClick={() => setEditingMedId(null)}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          ) : (
+                            <div>
+                              <div className="timeline-title">
+                                <strong>{medication.brand_raw}</strong>
+                                <span className={`trust-badge ${trust.className}`}>{trust.label}</span>
+                              </div>
+                              <span className="unit">
+                                {[medication.dose, medication.freq].filter(Boolean).join(" · ")}
+                              </span>
+                              <div className="med-card-actions">
+                                <button type="button" className="text-button" onClick={() => beginMedEdit(medication)}>
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-button text-danger"
+                                  disabled={deletingMedId === medication.id}
+                                  onClick={() => deleteMedication(medication)}
+                                >
+                                  {deletingMedId === medication.id ? "Deleting…" : "Delete"}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               ) : null}

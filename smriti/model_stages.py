@@ -257,11 +257,9 @@ def qwen_target(context, report):
                     continue
                 from smriti.classify import is_boilerplate
                 ocr_page = read_page(settings, row, "ocr", page)
-                if ocr_page is None:
-                    raise SpoolError("prepared_artifact_invalid")
                 metadata = page_metadata(settings, row["job_id"], page)
                 from smriti.handwriting import needs_page_review
-                if needs_page_review(ocr_page["words"], metadata["capture_type"]):
+                if ocr_page and needs_page_review(ocr_page["words"], metadata["capture_type"]):
                     save_page(engine, settings, row, "qwen", page, fields=[], model_version=VLM_ENGINE_NAME)
                     completed += 1
                     _progress(engine, row["job_id"], "qwen_unavailable_page", page=page, completed=completed,
