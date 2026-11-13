@@ -1,3 +1,0 @@
-# Optional: install only to enable user-approved redacted cloud extraction.
-google-genai==3.0.0
-rapidfuzz==3.14.6

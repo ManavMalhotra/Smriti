@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Footer from "../components/Footer";
 import JobProgress from "../components/JobProgress";
 import RedactionConsent from "../components/RedactionConsent";
+import Topbar from "../components/Topbar";
 import { requestJson } from "../lib/api";
 import { docTypeLabel, shortId, statusLabel } from "../lib/format";
 
@@ -218,7 +219,7 @@ export default function Intake({ patient, onDone, onOpenDocument, onSignOut, onQ
         } catch (err) {
           if (!active.current || controller.signal.aborted) return;
           if (err?.status === 409 && err.data?.duplicate) {
-             updateRow(row.id, { state: "duplicate", result: { duplicate: true, documentId: err.data.document_id ?? "", jobId: err.data.document_id ? null : err.data.job_id, pages: err.data.page_count ?? null, status: err.data.status ?? "queued", docType: err.data.doc_type ?? null } });
+              updateRow(row.id, { state: "duplicate", result: { duplicate: true, documentId: err.data.document_id ?? "", jobId: err.data.job_id, pages: err.data.page_count ?? null, status: err.data.status ?? "queued", docType: err.data.doc_type ?? null } });
              wakePolling.current();
           } else {
             updateRow(row.id, { state: err?.status >= 400 && err?.status < 500 ? "rejected" : "upload_failed", uploadError: err instanceof Error ? err.message : "The upload failed. Try again." });
@@ -263,21 +264,13 @@ export default function Intake({ patient, onDone, onOpenDocument, onSignOut, onQ
 
   return (
     <div className="shell">
-      <div className="topbar">
-        <div className="wordmark">Smriti</div>
-        <div className="topbar-actions">
-          <button type="button" className="text-button" onClick={() => navigate(onDone)}>
-            Back to summary
-          </button>
-          {onQueue ? <button type="button" className="text-button" onClick={() => navigate(onQueue)}>Queue</button> : null}
-          {onDocuments ? <button type="button" className="text-button" onClick={() => navigate(onDocuments)}>Documents</button> : null}
-          {onSignOut ? (
-            <button type="button" className="text-button" onClick={() => navigate(onSignOut)}>
-              Sign out
-            </button>
-          ) : null}
-        </div>
-      </div>
+      <Topbar
+        current="intake"
+        back={{ label: "Back to summary", onClick: () => navigate(onDone) }}
+        onDocuments={onDocuments ? () => navigate(onDocuments) : undefined}
+        onQueue={onQueue ? () => navigate(onQueue) : undefined}
+        onSignOut={onSignOut ? () => navigate(onSignOut) : undefined}
+      />
 
       <main>
         {awaiting ? <RedactionConsent key={awaiting.result?.documentId ?? awaiting.job?.document_id} documentId={awaiting.result?.documentId ?? awaiting.job?.document_id} cloudAvailable={cloudReviewAvailable}

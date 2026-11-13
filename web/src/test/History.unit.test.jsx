@@ -69,7 +69,7 @@ describe("History", () => {
     const onOpen = vi.fn();
     const user = userEvent.setup();
     render(<History reports={[report()]} documents={[]} onOpen={onOpen} />);
-    expect(screen.getByRole("heading", { name: "History" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Health timeline" })).toBeInTheDocument();
     expect(screen.getByText("HbA1c 8.9 %")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Open City Lab from/ }));
     expect(onOpen).toHaveBeenCalledWith("d-1", 1);

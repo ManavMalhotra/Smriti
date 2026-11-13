@@ -1,6 +1,5 @@
 import Header from "../components/Header";
 import Problems from "../components/Problems";
-import StandardizedSummary from "../components/StandardizedSummary";
 import Medications from "../components/Medications";
 import Results from "../components/Results";
 import Pending from "../components/Pending";
@@ -28,6 +27,7 @@ export default function Dashboard({
   onSignOut,
   loading = false,
   error = "",
+  onRetry,
   timeline = [],
   timelineLoading = false,
   timelineError = "",
@@ -46,6 +46,20 @@ export default function Dashboard({
     documents: [],
   };
   const ready = Boolean(data) || (!loading && !error);
+  const summary = view.standardized_summary;
+  const hasSummary = Boolean(
+    summary?.concise_history_summary ||
+      summary?.chronic_conditions?.length ||
+      view.problems?.length ||
+      Object.values(view.clinical_snapshot ?? {}).some((items) => items?.length),
+  );
+  const hasRecords = Boolean(
+    view.results?.length ||
+      view.medications?.length ||
+      view.pending?.length ||
+      view.documents?.length ||
+      timeline.length,
+  );
 
   return (
     <div className="shell clinical-dashboard">
@@ -70,7 +84,12 @@ export default function Dashboard({
         ) : null}
         {error ? (
           <div className="alert" role="alert">
-            {error}
+            <p>{error}</p>
+            {onRetry ? (
+              <button type="button" className="text-button" onClick={onRetry}>
+                Try again
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -78,38 +97,75 @@ export default function Dashboard({
           <>
             <Processing jobs={activeJobs} onQueue={onQueue} />
 
-            {view.standardized_summary ? (
-              <StandardizedSummary
-                summary={view.standardized_summary}
-                onOpenDocument={onOpenDocument}
-              />
-            ) : (view.problems?.length || Object.values(view.clinical_snapshot ?? {}).some((items) => items.length)) ? (
-              <div className="safety-bar"><Problems problems={view.problems} snapshot={view.clinical_snapshot} onSource={setSource} /></div>
-            ) : null}
-            <div className="clinical-grid">
-              <div className="clinical-history">
-                <History
-                  reports={timeline?.length ? timeline : (view.reports || view.master_timeline || [])}
-                  documents={view.documents}
-                  events={view.master_timeline}
-                  loading={timelineLoading}
-                  error={timelineError}
-                  onOpen={onOpenDocument}
+            {hasSummary ? (
+              <div className="safety-bar">
+                <Problems
+                  problems={view.problems}
+                  snapshot={view.clinical_snapshot}
+                  narrative={summary?.concise_history_summary}
+                  conditions={summary?.chronic_conditions}
                   onSource={setSource}
                 />
               </div>
-              <div className="clinical-meds"><Medications medications={view.medications} timeline={view.medications_timeline} onSource={setSource} onOpenDocument={onOpenDocument} /></div>
-              <div className="clinical-results"><Results results={view.results} organGroups={view.organ_groups} onSource={setSource} /></div>
-              <div className="clinical-pending"><Pending pending={view.pending} /></div>
-            </div>
+            ) : null}
+                  onSource={setSource}
+                />
+              </div>
+            ) : null}
 
-            <div className="zone-grid">
-              <UnassignedFindings
-                results={view.results}
-                timeline={timeline}
-                onOpenDocument={onOpenDocument}
-              />
-            </div>
+            {!hasRecords ? (
+              <section className="panel empty-state" aria-labelledby="empty-heading">
+                <h2 id="empty-heading">Start with a document</h2>
+                <p>
+                  Upload a prescription, lab report, or discharge summary. Smriti reads it on
+                  this device and links every value back to its page.
+                </p>
+                <button type="button" className="button-primary" onClick={onAdd}>
+                  Add document
+                </button>
+              </section>
+            ) : (
+              <>
+                <div className="clinical-grid">
+                  <div className="clinical-history">
+                    <History
+                      reports={timeline}
+                      documents={view.documents}
+                      loading={timelineLoading}
+                      error={timelineError}
+                      onOpen={onOpenDocument}
+                      onSource={setSource}
+                    />
+                  </div>
+                  <div className="clinical-meds">
+                    <Medications
+                      medications={view.medications}
+                      timeline={view.medications_timeline}
+                      onSource={setSource}
+                      onOpenDocument={onOpenDocument}
+                    />
+                  </div>
+                  <div className="clinical-results">
+                    <Results
+                      results={view.results}
+                      organGroups={view.organ_groups}
+                      onSource={setSource}
+                    />
+                  </div>
+                  <div className="clinical-pending">
+                    <Pending pending={view.pending} />
+                  </div>
+                </div>
+
+                <div className="zone-grid">
+                  <UnassignedFindings
+                    results={view.results}
+                    timeline={timeline}
+                    onOpenDocument={onOpenDocument}
+                  />
+                </div>
+              </>
+            )}
           </>
         ) : null}
       </main>

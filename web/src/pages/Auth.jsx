@@ -102,7 +102,7 @@ export default function Auth({ onAuthenticated }) {
     <div className="shell auth-shell">
       <div className="topbar">
         <div className="wordmark">Smriti</div>
-        <span className="topbar-note">Local only · no cloud</span>
+        <span className="topbar-note">Local-first · cloud review optional</span>
       </div>
 
       <main className="auth-main">

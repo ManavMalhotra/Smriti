@@ -22,7 +22,7 @@ describe("Queue", () => {
     expect(screen.getByText("2 / 59 eligible pages read")).toBeInTheDocument();
     expect(screen.getByText("Qwen3-VL is reading page independently")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Open document" })).toHaveLength(1);
-    expect(fetch).toHaveBeenCalledWith("/api/jobs?scope=active&limit=20&offset=0", expect.objectContaining({ credentials: "same-origin" }));
+    expect(fetch).toHaveBeenCalledWith("/api/jobs?scope=all&limit=20&offset=0", expect.objectContaining({ credentials: "same-origin" }));
     expect(await axe(container)).toHaveNoViolations();
   });
 
@@ -83,10 +83,10 @@ describe("Queue", () => {
     vi.stubGlobal("fetch", fetch);
     render(<Queue {...props} />);
     await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Recent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finished" }));
     await act(async () => {});
     expect(fetch.mock.calls.at(-1)[0]).toBe("/api/jobs?scope=recent&limit=20&offset=0");
-    fireEvent.click(screen.getByRole("button", { name: "Recent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finished" }));
     expect(screen.getByText("Source page 3 of 73")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await act(async () => {});
@@ -106,10 +106,12 @@ describe("Queue", () => {
     vi.stubGlobal("fetch", fetch);
     render(<Queue {...props} />);
     await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Active" }));
+    await act(async () => {});
     completed = true;
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(screen.getByText("No active jobs.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Recent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finished" }));
     await act(async () => {});
     expect(screen.getByRole("button", { name: "Review extracted fields" })).toBeInTheDocument();
   });
@@ -121,11 +123,32 @@ describe("Queue", () => {
       .mockResolvedValue(response({ jobs: [reading], has_more: false }));
     vi.stubGlobal("fetch", fetch);
     render(<Queue {...props} />);
-    await screen.findByText("No active jobs.");
-    fireEvent.click(screen.getByRole("button", { name: "Recent" }));
+    await screen.findByText("No uploaded jobs.");
+    fireEvent.click(screen.getByRole("button", { name: "Finished" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Refresh to try again");
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByText("Source page 3 of 73");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows failed uploads by default and retries their stored document without re-uploading", async () => {
+    let retried = false;
+    const fetch = vi.fn((url) => {
+      if (url === "/api/jobs/reading-1/retry") {
+        retried = true;
+        return Promise.resolve(response({ id: reading.id, state: "queued" }));
+      }
+      return Promise.resolve(response({ jobs: [{ ...reading, state: retried ? "queued" : "failed", stage: retried ? "queued" : "ocr" }], has_more: false }));
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<Queue {...props} />);
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Failed", pressed: false }));
+    await act(async () => {});
+    expect(fetch.mock.calls.at(-1)[0]).toBe("/api/jobs?scope=failed&limit=20&offset=0");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => {});
+    expect(fetch).toHaveBeenCalledWith("/api/jobs/reading-1/retry", expect.objectContaining({ method: "POST" }));
+    expect(screen.getByRole("button", { name: "All", pressed: true })).toBeInTheDocument();
   });
 });

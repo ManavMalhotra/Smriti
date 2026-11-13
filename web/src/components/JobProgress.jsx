@@ -55,10 +55,10 @@ export default function JobProgress({ job, compact = false, detailsOpen = false 
         {context?.code ? <code>{context.code}</code> : null}
         {context?.status ? <span>HTTP {context.status}</span> : null}
       </div>
-      {!terminal ? (
+      {!terminal && knownProgress ? (
         <div className="job-meter">
-          <progress aria-label={job?.stage === "qwen" ? "Qwen3-VL page reading" : job?.stage === "ocr" ? "OCR page reading" : "Local processing"} max={knownProgress ? job.stage_total : 1} value={knownProgress ? job.completed_pages : undefined} />
-          {knownProgress ? <span>{job.completed_pages} / {job.stage_total} {job.stage === "qwen" ? `eligible pages ${verification === "partial" ? "resolved" : "read"}` : "pages read"}</span> : null}
+          <progress aria-label={job?.stage === "qwen" ? "Qwen3-VL page reading" : job?.stage === "ocr" ? "OCR page reading" : "Local processing"} max={job.stage_total} value={job.completed_pages} />
+          <span>{job.completed_pages} / {job.stage_total} {job.stage === "qwen" ? `eligible pages ${verification === "partial" ? "resolved" : "read"}` : "pages read"}</span>
         </div>
       ) : null}
       {!compact && stageIndex != null ? (

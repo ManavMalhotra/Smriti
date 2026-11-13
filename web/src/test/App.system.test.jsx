@@ -81,6 +81,26 @@ afterEach(() => {
 });
 
 describe("App navigation", () => {
+  it("loads stored failed uploads in Documents even when the dashboard summary fails", async () => {
+    window.history.replaceState(null, "", "#/documents");
+    const baseFetch = authenticatedFetch();
+    vi.stubGlobal("fetch", vi.fn((url, options) => {
+      if (url === `/api/patients/${summary.patient.id}/summary`) {
+        return Promise.resolve(jsonResponse({ error: { message: "Summary unavailable" } }, 500));
+      }
+      if (url === "/api/documents?limit=20&offset=0&filter=All") {
+        return Promise.resolve(jsonResponse({ documents: [{ id: "stored", document_id: "stored", job_id: "failed-job",
+          display_name: "Stored upload", status: "failed", job_state: "failed", page_count: 16, retryable: true }], has_more: false }));
+      }
+      return baseFetch(url, options);
+    }));
+    render(<App />);
+    await screen.findByText("Stored upload");
+    expect(screen.getByText("16 pages")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry processing" })).toBeInTheDocument();
+    expect(screen.queryByText("Summary unavailable")).not.toBeInTheDocument();
+  });
+
   it("opens the intake form and returns to the summary", async () => {
     vi.stubGlobal("fetch", authenticatedFetch());
     const user = userEvent.setup();
@@ -294,8 +314,8 @@ describe("Dashboard shell", () => {
 
     expect(headings).toEqual([
       "Coverage",
-      "History",
-      "Current medications",
+      "Health timeline",
+      "Medications on record",
       "Results",
       "Pending",
     ]);

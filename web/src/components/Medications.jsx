@@ -12,15 +12,17 @@ const ACTIVE_LIMIT = 5;
 
 function MedicationRow({ med, onSource, onOpenDocument }) {
   const trust = engineTrustBadge(med.engine, med.status, med.engine === "human");
+  const aiAssisted = Boolean(med.engine?.startsWith("gemini") || med.confidence_note === "deciphered_handwriting");
   return <li>
     <div className="timeline-title">
       <p className="item-title">{med.brand_raw}{med.salt ? ` (${med.salt})` : ""}</p>
       <span className={`trust-badge ${trust.className}`}>{trust.label}</span>
     </div>
     <p className="item-meta">{[med.dose, med.freq].filter(Boolean).join(" · ") || "Dose not recorded"}</p>
+    {aiAssisted ? <span className="pill">{med.confidence_note === "deciphered_handwriting" ? "Deciphered handwriting · check source" : "AI extraction · check source"}</span> : null}
     {(med.source_doc_id || med.doc_id) ? <button type="button" className="text-button item-source"
       onClick={() => onOpenDocument?.(med.source_doc_id || med.doc_id, med.page_num || med.page || 1)}>
-      Prescription · page {med.page_num || med.page || 1}
+      Source · page {med.page_num || med.page || 1}
     </button> : null}
     <SourcePills item={med} onSource={onSource} />
   </li>;
@@ -63,7 +65,7 @@ export default function Medications({ medications = [], timeline, onSource, onOp
           <p className="item-title">{med.brand_raw}{med.salt ? ` (${med.salt})` : ""}</p>
           <p className="item-meta">{[med.dose, med.freq].filter(Boolean).join(" · ") || "Dose not recorded"}</p>
           {med.source_doc_id ? <button type="button" className="text-button item-source"
-            onClick={() => onOpenDocument?.(med.source_doc_id, med.page_num || 1)}>Prescription · page {med.page_num || 1}</button> : null}
+            onClick={() => onOpenDocument?.(med.source_doc_id, med.page_num || 1)}>Source · page {med.page_num || 1}</button> : null}
         </li>)}</ul>
       </section>
     ))}

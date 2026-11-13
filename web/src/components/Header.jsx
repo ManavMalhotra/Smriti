@@ -1,4 +1,5 @@
 import CoverageStrip from "./CoverageStrip";
+import Topbar from "./Topbar";
 import { formatDate, formatSex } from "../lib/format";
 
 export default function Header({ patient, coverage, onAdd, onQueue, onDocuments, onSignOut }) {
@@ -14,27 +15,13 @@ export default function Header({ patient, coverage, onAdd, onQueue, onDocuments,
 
   return (
     <header>
-      <div className="topbar">
-        <div className="wordmark">Smriti</div>
-        <div className="topbar-actions">
-          <span className="topbar-note">Research prototype</span>
-          <button type="button" className="text-button print-btn" onClick={() => window.print()}>
-            Print / Export for Doctor
-          </button>
-          {onDocuments ? <button type="button" className="text-button" onClick={onDocuments}>Documents</button> : null}
-          {onQueue ? <button type="button" className="text-button" onClick={onQueue}>Queue</button> : null}
-          {onAdd ? (
-            <button type="button" className="text-button" onClick={onAdd}>
-              Add document
-            </button>
-          ) : null}
-          {onSignOut ? (
-            <button type="button" className="text-button" onClick={onSignOut}>
-              Sign out
-            </button>
-          ) : null}
-        </div>
-      </div>
+      <Topbar
+        current="summary"
+        onDocuments={onDocuments}
+        onQueue={onQueue}
+        onAdd={onAdd}
+        onSignOut={onSignOut}
+      />
 
       <div className="patient">
         <div>

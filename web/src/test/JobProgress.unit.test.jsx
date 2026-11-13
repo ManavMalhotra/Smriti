@@ -48,10 +48,10 @@ describe("JobProgress", () => {
 
   it("does not fabricate progress for old jobs or unknown stages", () => {
     const { rerender } = render(<JobProgress job={{ state: "running", page: 2, total: 2 }} />);
-    expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.getByText("Detailed history is unavailable for this job.")).toBeInTheDocument();
     rerender(<JobProgress job={{ ...reading, stage: "saving", current_page: null, completed_pages: null, stage_total: null, events: [] }} />);
-    expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
   it("keeps skipped verification and truncation explicit", async () => {

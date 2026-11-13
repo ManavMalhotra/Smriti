@@ -50,15 +50,21 @@ export default function Results({ results = [], organGroups, onSource }) {
         {groups.map(([key]) => <button type="button" className="button-secondary" key={key}
           aria-pressed={organ === key} onClick={() => setOrgan(key)}>{ORGANS[key] ?? "Other"}</button>)}
       </div> : null}
-      <fieldset className="result-filter-box">
-        <legend>Find values</legend>
-        <label><input type="checkbox" checked={abnormalOnly} onChange={(event) => setAbnormalOnly(event.target.checked)} />
-          Out of reference range <span className="count-badge">{outOfRangeCount}</span></label>
-      </fieldset>
+      <div className="result-filter-box">
+        <label>
+          <input
+            type="checkbox"
+            checked={abnormalOnly}
+            onChange={(event) => setAbnormalOnly(event.target.checked)}
+          />
+          Only out of range <span className="count-badge">{outOfRangeCount}</span>
+        </label>
+      </div>
       {reviewCount > 0 ? (
         <p className="result-note" role="note">
-          {reviewCount} extracted {reviewCount === 1 ? "value is" : "values are"} awaiting
-          review. Open the document in Documents to accept, correct, or reject them.
+          {reviewCount} extracted {reviewCount === 1 ? "value is" : "values are"} awaiting review in
+          Documents. Open the document to accept, correct, or reject{" "}
+          {reviewCount === 1 ? "it" : "them"}.
         </p>
       ) : null}
       {results.length === 0 ? (
@@ -89,9 +95,17 @@ export default function Results({ results = [], organGroups, onSource }) {
             </div>
 
             {result.points.length > 1 ? (
-              <Suspense fallback={null}>
-                <TrendChart result={result} onSource={openSource} />
-              </Suspense>
+              <>
+                <Suspense fallback={null}>
+                  <TrendChart result={result} onSource={openSource} />
+                </Suspense>
+                <p className="trend-legend">
+                  <span>
+                    <span className="trend-legend-mark" aria-hidden="true">▲</span> Out of range
+                  </span>
+                  <span>Dashed line · reference range</span>
+                </p>
+              </>
             ) : null}
 
             <div className="table-wrap">
@@ -108,7 +122,7 @@ export default function Results({ results = [], organGroups, onSource }) {
                     <th scope="col">Date</th>
                     <th scope="col">Value</th>
                     {result.points.some((p) => Object.hasOwn(p, "ref_min")) ? <th scope="col">Reference</th> : null}
-                    <th scope="col">Source</th>
+                    <th scope="col">Page</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -130,7 +144,7 @@ export default function Results({ results = [], organGroups, onSource }) {
                       <td>
                         <button
                           type="button"
-                          className="text-button"
+                          className="text-button source-tab"
                           onClick={() =>
                             openSource({
                               ...point,
@@ -142,7 +156,7 @@ export default function Results({ results = [], organGroups, onSource }) {
                             point.date,
                           )}`}
                         >
-                          [p.{point.page}]
+                          p.{point.page}
                         </button>
                         {(() => {
                           const trust = engineTrustBadge(point.engine, point.status, point.engine === "human");

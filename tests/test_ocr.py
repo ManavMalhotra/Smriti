@@ -141,6 +141,14 @@ def test_rapid_loader_uses_installed_flat_api_and_validates_all_sessions(monkeyp
     import sys
     from types import SimpleNamespace
 
+    class InferSession:
+        _init_sess_opts = staticmethod(lambda config: SimpleNamespace(execution_mode=None))
+
+    sequential = object()
+    monkeypatch.setitem(sys.modules, "onnxruntime", SimpleNamespace(
+        ExecutionMode=SimpleNamespace(ORT_SEQUENTIAL=sequential)))
+    monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime.utils.infer_engine", SimpleNamespace(
+        OrtInferSession=InferSession))
     session = MagicMock()
     session.get_providers.return_value = ["CPUExecutionProvider"]
     factory = MagicMock(return_value=SimpleNamespace(
@@ -159,11 +167,12 @@ def test_rapid_loader_uses_installed_flat_api_and_validates_all_sessions(monkeyp
     factory.assert_called_once_with(
         det_model_path=engine.det_repo + "/inference.onnx", det_limit_side_len=1600,
         det_limit_type="max", rec_model_path=engine.rec_repo + "/inference.onnx",
-        rec_keys_path=str(dictionary), rec_batch_num=1, intra_op_num_threads=4,
+        rec_keys_path=str(dictionary), rec_batch_num=1, intra_op_num_threads=6,
         inter_op_num_threads=1, det_use_cuda=False, det_use_dml=False,
         cls_use_cuda=False, cls_use_dml=False, rec_use_cuda=False, rec_use_dml=False,
     )
     assert session.get_providers.call_count == 3
+    assert InferSession._init_sess_opts({}).execution_mode is sequential
     assert all(call.kwargs["local_files_only"] for call in download.call_args_list)
     session.get_providers.return_value = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     rejected = RapidOcrOnnxEngine(dict_path=dictionary)
