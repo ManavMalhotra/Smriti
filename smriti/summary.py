@@ -218,17 +218,17 @@ def _results(conn: Connection, patient_id: str) -> list[Result]:
         if group["ref_high"] is None:
             group["ref_high"] = _parse_float(row._mapping["ref_high"])
 
-        if row._mapping["status"] == "rejected":
+        if row._mapping["status"] == "rejected" or (row._mapping["status"] == "review" and "hard_bound_failure" in (row._mapping["reason"] or "")):
             group["excluded"].append(
                 Excluded(
                     document_id=row._mapping["document_id"],
-                    reason=row._mapping["reason"] or "Rejected during review",
+                    reason=row._mapping["reason"] or "Biological bounds failure; confirmation required.",
                 )
             )
             continue
 
         clinical = _clinical(row._mapping["clinical_json"])
-        point_date = _parse_date(clinical.get("event_date")) or _doc_date(row._mapping)
+        point_date = _parse_date(clinical.get("event_date")) or _doc_date(row._mapping) or _parse_date(row._mapping.get("created_at"))
         value = _parse_float(row._mapping["value_num"])
         if point_date is None or value is None:
             continue
@@ -293,9 +293,7 @@ def build_summary(conn: Connection, patient_id: str) -> Summary:
             SELECT d.id, d.display_name, d.verified_date, d.doc_type, d.doc_date, d.collection_date, d.registration_date, d.report_date,
                    d.facility_name, d.lab_name, d.page_count, d.status, d.processed_at, d.created_at,
                    (SELECT COUNT(*) FROM observation o
-                    WHERE o.document_id = d.id AND o.status = 'review') +
-                   (SELECT COUNT(*) FROM report r
-                    WHERE r.document_id = d.id AND r.status = 'review') AS review_count
+                    WHERE o.document_id = d.id AND o.status = 'review') AS review_count
             FROM document d
             WHERE d.patient_id = :patient_id
             ORDER BY COALESCE(d.verified_date, d.collection_date, d.registration_date, d.report_date, d.doc_date) DESC,

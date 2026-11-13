@@ -30,7 +30,23 @@ _SINGLE_RANGE = re.compile(
     r"(?<![A-Za-z0-9.-])([<>≤≥])\s*(-?\d+(?:,\d+)*(?:\.\d+)?)"
 )
 _DATE_VALUE = re.compile(r"\b\d{1,4}[/.-](?:\d{1,2}|[A-Za-z]{3,9})[/.-]\d{2,4}\b")
-_FLAG = re.compile(r"\b(high|low|h|l|abnormal)\b", re.IGNORECASE)
+_WORD_FLAG = re.compile(r"\b(high|low|abnormal)\b", re.IGNORECASE)
+_CHAR_FLAG = re.compile(r"(?<=[\s,;:(\[])([HL])(?=[\s,;:)\].-]|\Z)", re.IGNORECASE)
+_INTERPRETATION_PREFIX = re.compile(
+    r"^(?:normal|abnormal|optimal|desirable|borderline(?:\s+high)?|high(?:\s+risk)?|very\s+high|low(?:\s+risk)?|very\s+low|"
+    r"diabetes(?:\s+mellitus)?|diabetic|pre-?diabetes|impaired\s+fasting|impaired\s+glucose|"
+    r"non-?diabetic|good\s+control|fair\s+control|poor\s+control|"
+    r"(?:1st|2nd|3rd|first|second|third)\s+trimester|"
+    r"stage\s*(?:[1-4]|[i-v]+)|"
+    r"mild|moderate|severe|critical|"
+    r"negative|positive|equivocal|non-?reactive|reactive|indeterminate|"
+    r"adults?|males?|females?|children|child|infants?|newborns?|neonat(?:al|e)|"
+    r"pre-?menopausal|post-?menopausal|follicular(?:\s+phase)?|luteal(?:\s+phase)?|mid-?cycle|ovulatory|"
+    r"(?:standard|intermediate|high|low|increased)\s+risk|"
+    r"deficien(?:t|cy)|insufficien(?:t|cy)|sufficien(?:t|cy)|toxicity|"
+    r"interpretation|note|reference|target\s+values?|guidelines?|cut-?off)\b",
+    re.IGNORECASE,
+)
 _MED_FREQ = (
     r"od|bd|tds|qid|hs|sos|prn|once\s+daily|twice\s+daily|"
     r"thrice\s+daily|every\s+day|\d\s*-\s*\d\s*-\s*\d|\d\s*/\s*\d\s*/\s*\d"
@@ -249,16 +265,30 @@ def _parse_range(text: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _printed_flag(text: str) -> str | None:
-    match = _FLAG.search(text)
-    if not match:
-        return None
-    value = match.group(1).lower()
-    if value in ("h", "high"):
-        return "H"
-    if value in ("l", "low"):
-        return "L"
-    return "A"
+def _printed_flag(text: str, unit: str | None = None) -> str | None:
+    masked = text
+    if unit:
+        masked = re.sub(re.escape(unit), " " * len(unit), masked, flags=re.IGNORECASE)
+    # Mask out known unit strings so trailing 'L' in /L never matches as Low
+    masked = _UNIT.sub(lambda m: " " * len(m.group(0)), masked)
+
+    word_match = _WORD_FLAG.search(masked)
+    if word_match:
+        val = word_match.group(1).lower()
+        if val == "high":
+            return "H"
+        if val == "low":
+            return "L"
+        return "A"
+
+    char_match = _CHAR_FLAG.search(masked)
+    if char_match:
+        val = char_match.group(1).upper()
+        if val in ("H", "L"):
+            return val
+        return "A"
+
+    return None
 
 
 def _bbox_for_value(words: list[OcrWord], value: str) -> list[float]:
@@ -345,7 +375,7 @@ def _extract_line(
                     unit_raw=unit,
                     ref_low=ref_low,
                     ref_high=ref_high,
-                    flag_printed=_printed_flag(tail),
+                    flag_printed=_printed_flag(tail, unit=unit),
                     bbox=_bbox_for_value(words, value_text or value_num),
                     page=page,
                     confidence=resolution.confidence,
@@ -390,7 +420,7 @@ def _extract_line(
                             unit_raw=unit_raw,
                             ref_low=ref_low,
                             ref_high=ref_high,
-                            flag_printed=_printed_flag(text),
+                            flag_printed=_printed_flag(text, unit=unit_raw),
                             bbox=_bbox_for_value(words, value_text or value_num),
                             page=page,
                             confidence=resolution.confidence,
@@ -411,6 +441,12 @@ def _extract_line(
         return fields
     if _PROSE_INDICATORS.search(prefix):
         return fields
+    # Bug 3 fix: reject reference sub-tables and interpretation cutoff lines
+    if _INTERPRETATION_PREFIX.search(prefix.strip()):
+        return fields
+    rest = text[num_match.start():].strip()
+    if re.match(r"^[<>=≤≥]|\b(?:to|-|–)\b", rest):
+        return fields
     parsed = _parse_value(text[num_match.start():])
     if parsed is None or parsed[0] is None:
         return fields
@@ -429,7 +465,7 @@ def _extract_line(
             unit_raw=unit,
             ref_low=ref_low,
             ref_high=ref_high,
-            flag_printed=_printed_flag(text),
+            flag_printed=_printed_flag(text, unit=unit),
             bbox=_bbox_for_value(words, value_text or value_num),
             page=page,
             confidence=0.0,

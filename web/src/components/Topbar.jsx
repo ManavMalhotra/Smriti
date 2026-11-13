@@ -17,6 +17,9 @@ export default function Topbar({
             {back.label}
           </button>
         ) : null}
+        <button type="button" className="text-button print-btn" onClick={() => window.print()}>
+          Print / Export for Doctor
+        </button>
         {onDocuments ? (
           <button
             type="button"

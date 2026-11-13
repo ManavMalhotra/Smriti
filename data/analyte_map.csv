@@ -2,11 +2,13 @@ analyte_id,display,unit,synonyms
 hba1c,HbA1c,%,hba1c|hb a1c|glycated hemoglobin|glycosylated hemoglobin|glycated haemoglobin
 fasting_glucose,Fasting glucose,mg/dL,fasting glucose|fasting blood sugar|fbs|glucose fasting|fasting plasma glucose
 glucose,Glucose,mg/dL,random glucose|random blood sugar|rbs|blood sugar|glucose
+pp_glucose,Postprandial glucose,mg/dL,post prandial glucose|postprandial glucose|ppbs|pp glucose|post prandial blood sugar
 hemoglobin,Hemoglobin,g/dL,hemoglobin|haemoglobin|hb
-wbc,White blood cells,cells/µL,white blood cells|wbc|total leucocyte count|tlc|leucocyte count|leukocyte count
+wbc,White blood cells,cells/µL,white blood cells|wbc|total leucocyte count|tlc|leucocyte count|leukocyte count|total wbc count
 platelets,Platelets,cells/µL,platelets|platelet count|plt
 creatinine,Creatinine,mg/dL,creatinine|serum creatinine
 urea,Urea,mg/dL,blood urea|urea
+bun,Blood urea nitrogen,mg/dL,blood urea nitrogen|bun
 sodium,Sodium,mEq/L,sodium|na+
 potassium,Potassium,mEq/L,potassium|k+
 chloride,Chloride,mEq/L,chloride|cl-
@@ -14,11 +16,17 @@ total_cholesterol,Total cholesterol,mg/dL,total cholesterol|cholesterol total|ch
 ldl,LDL cholesterol,mg/dL,ldl cholesterol|ldl-c|ldl
 hdl,HDL cholesterol,mg/dL,hdl cholesterol|hdl-c|hdl
 triglycerides,Triglycerides,mg/dL,triglycerides|triglyceride|tg
+vldl,VLDL cholesterol,mg/dL,vldl cholesterol|vldl-c|vldl
 alt,ALT,U/L,alt|sgpt|alanine aminotransferase
 ast,AST,U/L,ast|sgot|aspartate aminotransferase
 alp,Alkaline phosphatase,U/L,alkaline phosphatase|alp|alk phos
+ggt,GGT,U/L,ggt|ggtp|gamma glutamyl transferase
 bilirubin_total,Total bilirubin,mg/dL,total bilirubin|bilirubin total|bilirubin
+bilirubin_direct,Direct bilirubin,mg/dL,direct bilirubin|bilirubin direct|conjugated bilirubin
+bilirubin_indirect,Indirect bilirubin,mg/dL,indirect bilirubin|bilirubin indirect|unconjugated bilirubin
+total_protein,Total protein,g/dL,total protein|serum protein|protein total
 albumin,Albumin,g/dL,albumin|serum albumin
+globulin,Globulin,g/dL,globulin|serum globulin
 tsh,TSH,µIU/mL,tsh|thyroid stimulating hormone|thyrotropin
 t3,T3,ng/dL,t3|triiodothyronine
 t4,T4,µg/dL,t4|thyroxine
@@ -29,3 +37,16 @@ esr,ESR,mm/hr,esr|erythrocyte sedimentation rate
 uric_acid,Uric acid,mg/dL,uric acid|serum uric acid
 calcium,Calcium,mg/dL,calcium|serum calcium
 phosphorus,Phosphorus,mg/dL,phosphorus|phosphate|serum phosphate
+serum_iron,Serum iron,µg/dL,serum iron|iron|fe
+ferritin,Ferritin,ng/mL,ferritin|serum ferritin
+neutrophils,Neutrophils,%,neutrophils|polymorphs|segs|neutrophil
+lymphocytes,Lymphocytes,%,lymphocytes|lymphs|lymphocyte
+monocytes,Monocytes,%,monocytes|monocyte
+eosinophils,Eosinophils,%,eosinophils|eos|eosinophil
+basophils,Basophils,%,basophils|baso|basophil
+mcv,MCV,fL,mcv|mean corpuscular volume
+mch,MCH,pg,mch|mean corpuscular hemoglobin
+mchc,MCHC,g/dL,mchc|mean corpuscular hemoglobin concentration
+rdw,RDW,%,rdw|red cell distribution width|rdw-cv
+hematocrit,Hematocrit,%,hematocrit|packed cell volume|pcv|hct
+egfr,eGFR,mL/min/1.73m²,egfr|estimated gfr|glomerular filtration rate

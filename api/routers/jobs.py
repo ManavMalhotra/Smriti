@@ -93,7 +93,7 @@ def retry_job(
         # Acquire the write lock before checking ownership or coordinator membership.
         conn.execute(text("UPDATE submissions SET updated_at = updated_at WHERE job_id = :id"), {"id": job_id})
         owned = conn.execute(
-            text("""SELECT j.id, j.state, d.id AS document_id, s.state AS submission_state,
+            text("""SELECT j.id, j.state, d.id AS document_id, d.image_path, s.state AS submission_state,
                            s.batch_id, b.state AS batch_state, s.preparation_manifest_json,
                            s.consent_revoked_at, c.revoked_at, c.document_id AS consent_id, j.total
                     FROM jobs j JOIN document d ON d.id = j.document_id
@@ -106,6 +106,12 @@ def retry_job(
         ).mappings().first()
         if owned is None:
             api_error(404, "not_found", f"No retryable job {job_id}.")
+        image_path = owned.get("image_path")
+        if image_path:
+            root = request.app.state.settings.upload_dir.resolve()
+            target = (root / image_path).resolve()
+            if not target.exists() or not target.is_dir():
+                api_error(409, "file_missing", "Document source files are missing on disk and cannot be retried.")
         if owned["submission_state"] != "promoted":
             api_error(409, "source_unavailable", "This upload has no prepared source for retry.")
         if owned["consent_id"] is None or owned["consent_revoked_at"] is not None or owned["revoked_at"] is not None:

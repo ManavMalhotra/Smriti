@@ -135,7 +135,11 @@ def rotate(bgr: np.ndarray, angle: float) -> np.ndarray:
 def apply_clahe(bgr: np.ndarray) -> np.ndarray:
     lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
     lightness, a_channel, b_channel = cv2.split(lab)
-    equalised = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lightness)
+    # Flatten uneven background illumination and camera shadows using morphological closing
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (19, 19))
+    bg = cv2.morphologyEx(lightness, cv2.MORPH_CLOSE, kernel)
+    flattened = cv2.divide(lightness, bg, scale=255)
+    equalised = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(flattened)
     return cv2.cvtColor(cv2.merge((equalised, a_channel, b_channel)), cv2.COLOR_LAB2BGR)
 
 

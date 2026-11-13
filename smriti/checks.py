@@ -346,3 +346,75 @@ def generate_orphan_token_report(
         "orphan_ratio": len(orphan_tokens) / max(1, total),
         "orphan_tokens": orphan_tokens,
     }
+
+
+def run_all_checks(
+    analyte_id: str | None,
+    value: str | float | None,
+    related_analytes: dict[str, float] | None = None,
+    bounds_map: dict[str, Bounds] | None = None,
+) -> tuple[BoundsVerdict, str | None]:
+    """Run biological plausibility bounds and clinical arithmetic checks.
+
+    Returns:
+        (verdict, reason): ('pass' | 'review' | 'skipped', failure_reason)
+    """
+    if analyte_id is None or value is None:
+        return "skipped", None
+
+    verdict, reason = check_bounds(analyte_id, value, bounds_map=bounds_map)
+    if verdict == "review":
+        return "review", f"hard_bound_failure: {reason}"
+
+    if related_analytes:
+        aid = analyte_id.lower()
+        if aid in {"ldl", "cholesterol", "cholesterol_total", "hdl", "triglycerides"}:
+            tc = related_analytes.get("cholesterol_total") or related_analytes.get("cholesterol")
+            hdl = related_analytes.get("hdl")
+            tg = related_analytes.get("triglycerides")
+            ldl = related_analytes.get("ldl")
+            if all(v is not None for v in (tc, hdl, tg, ldl)):
+                v_res, v_reason = check_friedewald(tc, hdl, tg, ldl)
+                if v_res == "review":
+                    return "review", v_reason
+
+        if aid in {"bilirubin_total", "bilirubin_direct", "bilirubin_indirect"}:
+            bt = related_analytes.get("bilirubin_total")
+            bd = related_analytes.get("bilirubin_direct")
+            bi = related_analytes.get("bilirubin_indirect")
+            if all(v is not None for v in (bt, bd, bi)):
+                b_res, b_reason = check_bilirubin(bt, bd, bi)
+                if b_res == "review":
+                    return "review", b_reason
+
+        if aid in {"mcv", "hematocrit", "rbc"}:
+            hct = related_analytes.get("hematocrit")
+            rbc = related_analytes.get("rbc")
+            mcv = related_analytes.get("mcv")
+            if all(v is not None for v in (hct, rbc, mcv)):
+                m_res, m_reason = check_mcv(hct, rbc, mcv)
+                if m_res == "review":
+                    return "review", m_reason
+
+        if aid in {"anc", "wbc", "neutrophils"}:
+            wbc = related_analytes.get("wbc")
+            neut = related_analytes.get("neutrophils")
+            anc = related_analytes.get("anc")
+            if all(v is not None for v in (wbc, neut, anc)):
+                a_res, a_reason = check_anc(wbc, neut, anc)
+                if a_res == "review":
+                    return "review", a_reason
+
+        if aid in {"neutrophils", "lymphocytes", "monocytes", "eosinophils", "basophils"}:
+            n = related_analytes.get("neutrophils")
+            l = related_analytes.get("lymphocytes")
+            m = related_analytes.get("monocytes", 0.0)
+            e = related_analytes.get("eosinophils", 0.0)
+            b = related_analytes.get("basophils", 0.0)
+            if n is not None and l is not None:
+                d_res, d_reason = check_dlc(n, l, m, e, b)
+                if d_res == "review":
+                    return "review", d_reason
+
+    return verdict, reason
+

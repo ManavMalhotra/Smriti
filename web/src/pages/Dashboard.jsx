@@ -66,13 +66,19 @@ export default function Dashboard({
       <Header
         patient={view.patient}
         coverage={view.coverage}
+        documents={view.documents}
         onAdd={onAdd}
         onQueue={onQueue}
         onDocuments={onDocuments}
+        onOpenDocument={onOpenDocument}
         onSignOut={onSignOut}
       />
 
       <main>
+        <div className="doctor-print-header" aria-hidden="true">
+          <h1>Smriti · Clinical Summary Report</h1>
+          <p>Patient: {view.patient?.alias} {view.patient?.uhid ? `· UHID: ${view.patient.uhid}` : ""} · Generated on {new Date().toLocaleDateString("en-GB", { dateStyle: "long" })}</p>
+        </div>
         {loading && !data ? (
           <p className="empty" role="status">
             Loading summary…
@@ -132,9 +138,11 @@ export default function Dashboard({
                   <div className="clinical-meds">
                     <Medications
                       medications={view.medications}
+                      documents={view.documents}
                       timeline={view.medications_timeline}
                       onSource={setSource}
                       onOpenDocument={onOpenDocument}
+                      onSummaryUpdate={onSummaryUpdate || setLocalSummary}
                     />
                   </div>
                   <div className="clinical-results">
@@ -154,6 +162,7 @@ export default function Dashboard({
                     results={view.results}
                     timeline={timeline}
                     onOpenDocument={onOpenDocument}
+                    onSummaryUpdate={onSummaryUpdate || setLocalSummary}
                   />
                 </div>
               </>

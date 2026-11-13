@@ -113,3 +113,23 @@ export function stateLabel(state) {
     }[state] ?? state
   );
 }
+
+export function engineTrustBadge(engine, status, isHumanReviewed = false) {
+  if (engine === "human" || isHumanReviewed || status === "accepted" || status === "auto") {
+    if (engine === "human" || isHumanReviewed) {
+      return { label: "Human Verified", className: "trust-human" };
+    }
+  }
+  const e = (engine || "").toLowerCase();
+  if (e === "human") {
+    return { label: "Human Verified", className: "trust-human" };
+  }
+  if (e.includes("gemini") || e.includes("cloud")) {
+    return { label: "Gemini (Cloud Encrypted)", className: "trust-gemini" };
+  }
+  if (e.includes("vlm") || e.includes("llama") || e.includes("qwen")) {
+    return { label: "llama-server (Local GPU)", className: "trust-vlm" };
+  }
+  return { label: "RapidOCR (Local)", className: "trust-ocr" };
+}
+

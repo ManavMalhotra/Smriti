@@ -62,14 +62,16 @@ export default function History({
   onOpen,
   events,
   onSource,
+  title,
 }) {
   const [expanded, setExpanded] = useState(false);
   const entries = Array.isArray(events) ? events.map((item) => ({ ...item, key: item.id, date: item.event_date,
     documentId: item.doc_id, page: item.page_num, summary: item.value_text })) : buildHistory(reports, documents);
   const visible = expanded ? entries : entries.slice(0, RECENT);
+  const panelTitle = title || "Health timeline";
 
   return (
-    <Panel title="Health timeline">
+    <Panel title={panelTitle}>
       {loading && !entries.length ? (
         <p className="empty" role="status">
           Loading history…

@@ -110,6 +110,8 @@ def needs_page_review(words, capture_type: str) -> bool:
     if capture_type == "handwritten":
         return True
     count = len(words)
-    average = sum(word.confidence for word in words) / count if count else 0
+    if count == 0:
+        return True
+    average = sum(word.confidence for word in words) / count
     fragments = sum(len(word.text.strip()) <= 2 for word in words)
-    return count < 5 or average < .45 or count >= 10 and fragments / count > .7
+    return average < .45 or (count >= 10 and fragments / count > .7)

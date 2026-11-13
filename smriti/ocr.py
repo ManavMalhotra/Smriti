@@ -104,7 +104,7 @@ class RapidOcrOnnxEngine:
         det_repo: str = "PaddlePaddle/PP-OCRv5_mobile_det_onnx",
         rec_repo: str = "PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx",
         dict_path: Path | str | None = None,
-        threads: int = 6,
+        threads: int = 4,
     ):
         self.det_repo = det_repo
         self.rec_repo = rec_repo
@@ -141,6 +141,7 @@ class RapidOcrOnnxEngine:
                 def sequential_options(config):
                     options = init_options(config)
                     options.execution_mode = ExecutionMode.ORT_SEQUENTIAL
+                    options.enable_cpu_mem_arena = False
                     return options
 
                 OrtInferSession._init_sess_opts = staticmethod(sequential_options)

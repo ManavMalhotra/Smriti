@@ -57,16 +57,16 @@ class Settings:
     gemini_api_key: str | None = field(default=None, repr=False)
     gemini_model_id: str = "gemini-3.8-flash"
     max_batch_submissions: int = MAX_BATCH_SUBMISSIONS
-    max_workset_pages: int = MAX_WORKSET_PAGES
+    max_workset_pages: int = 5
     max_spoolers: int = MAX_SPOOLERS
     debug_retain_failed_spool: bool = False
     preparation_timeout_seconds: float = 300.0
     ocr_startup_seconds: float = 60.0
     ocr_page_seconds: float = 120.0
     vlm_startup_seconds: float = 30.0
-    vlm_request_seconds: float = 240.0
+    vlm_request_seconds: float = 45.0
     vlm_overhead_seconds: float = 60.0
-    vlm_min_available_bytes: int = 2 * 1024**3
+    vlm_min_available_bytes: int = 768 * 1024 * 1024
     cleanup_wait_seconds: float = 5.0
     ram_sample_seconds: float = 1.0
     gpu_poll_seconds: float = 2.0
@@ -77,7 +77,7 @@ class Settings:
     max_page_text_bytes: int = 1024**2
     max_page_words: int = 100_000
     max_artifact_bytes: int = 16 * 1024**2
-    native_memory_bytes: int = 6 * 1024**3
+    native_memory_bytes: int = int(3.2 * 1024**3)
     inspection_timeout_seconds: float = 300.0
     helper_timeout_seconds: float = 300.0
     log_file_bytes: int = 10 * 1024**2
@@ -107,8 +107,8 @@ class Settings:
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive")
-        if self.vlm_startup_seconds < 30 or self.vlm_request_seconds < 120:
-            raise ValueError("VLM startup/request budgets cannot shorten the existing 30s/120s limits")
+        if self.vlm_startup_seconds < 30 or self.vlm_request_seconds < 30:
+            raise ValueError("VLM startup/request budgets cannot shorten the approved 30s limits")
         if self.cleanup_wait_seconds > 5 or not 1 <= self.ram_sample_seconds <= 2:
             raise ValueError("cleanup waits must be at most 5s; RAM samples must be 1–2s apart")
         if self.gpu_poll_seconds < 2 or self.gpu_query_timeout_seconds > 3:
@@ -215,16 +215,16 @@ def load_settings() -> Settings:
         gemini_api_key=None if profile == "demo" else os.getenv("GEMINI_API_KEY") or None,
         gemini_model_id=os.getenv("GEMINI_MODEL_ID", "gemini-3.8-flash"),
         max_batch_submissions=int(os.getenv("SMRITI_MAX_BATCH_SUBMISSIONS", "10")),
-        max_workset_pages=int(os.getenv("SMRITI_MAX_WORKSET_PAGES", "20")),
+        max_workset_pages=int(os.getenv("SMRITI_MAX_WORKSET_PAGES", "6")),
         max_spoolers=int(os.getenv("SMRITI_MAX_SPOOLERS", "2")),
         debug_retain_failed_spool=debug_retention == "1",
         preparation_timeout_seconds=float(os.getenv("SMRITI_PREPARATION_TIMEOUT_SECONDS", "300")),
         ocr_startup_seconds=float(os.getenv("SMRITI_OCR_STARTUP_SECONDS", "60")),
         ocr_page_seconds=float(os.getenv("SMRITI_OCR_PAGE_SECONDS", "120")),
         vlm_startup_seconds=float(os.getenv("SMRITI_VLM_STARTUP_SECONDS", "30")),
-        vlm_request_seconds=float(os.getenv("SMRITI_VLM_REQUEST_SECONDS", "240")),
+        vlm_request_seconds=float(os.getenv("SMRITI_VLM_REQUEST_SECONDS", "45")),
         vlm_overhead_seconds=float(os.getenv("SMRITI_VLM_OVERHEAD_SECONDS", "60")),
-        vlm_min_available_bytes=int(os.getenv("SMRITI_VLM_MIN_AVAILABLE_BYTES", str(2 * 1024**3))),
+        vlm_min_available_bytes=int(os.getenv("SMRITI_VLM_MIN_AVAILABLE_BYTES", str(768 * 1024 * 1024))),
         cleanup_wait_seconds=float(os.getenv("SMRITI_CLEANUP_WAIT_SECONDS", "5")),
         ram_sample_seconds=float(os.getenv("SMRITI_RAM_SAMPLE_SECONDS", "1")),
         gpu_poll_seconds=float(os.getenv("SMRITI_GPU_POLL_SECONDS", "2")),
@@ -234,7 +234,7 @@ def load_settings() -> Settings:
         max_page_text_bytes=int(os.getenv("SMRITI_MAX_PAGE_TEXT_BYTES", str(1024**2))),
         max_page_words=int(os.getenv("SMRITI_MAX_PAGE_WORDS", "100000")),
         max_artifact_bytes=int(os.getenv("SMRITI_MAX_ARTIFACT_BYTES", str(16 * 1024**2))),
-        native_memory_bytes=int(os.getenv("SMRITI_NATIVE_MEMORY_BYTES", str(6 * 1024**3))),
+        native_memory_bytes=int(os.getenv("SMRITI_NATIVE_MEMORY_BYTES", str(int(3.2 * 1024**3)))),
         inspection_timeout_seconds=float(os.getenv("SMRITI_INSPECTION_TIMEOUT_SECONDS", "300")),
         helper_timeout_seconds=float(os.getenv("SMRITI_HELPER_TIMEOUT_SECONDS", "300")),
         log_file_bytes=int(os.getenv("SMRITI_LOG_FILE_BYTES", str(10 * 1024**2))),

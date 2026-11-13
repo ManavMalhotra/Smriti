@@ -30,7 +30,7 @@ def unit_matches(printed: str | None, configured: str) -> bool:
         return False
     if printed_key == configured_key:
         return True
-    cell_units = {"cells/ul", "/ul"}
+    cell_units = {"cells/ul", "/ul", "cells/cumm", "/cumm", "cumm", "cells/mm3", "/mm3"}
     return printed_key in cell_units and configured_key in cell_units
 
 

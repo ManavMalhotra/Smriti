@@ -1924,6 +1924,146 @@ tr:last-child td {
   color: var(--danger);
 }
 
+/* Trust Badges */
+.trust-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+.trust-ocr {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+.trust-vlm {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+.trust-gemini {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+.trust-human {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+/* Document & Observation Edit Forms */
+.library-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-block: 16px;
+}
+.library-search-input {
+  flex: 1;
+  min-width: 220px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.library-sort-select {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.manual-entry-panel {
+  margin-block: 16px;
+  padding: 16px;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface-quiet);
+}
+.med-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.text-danger {
+  color: var(--danger) !important;
+}
+
+/* 1-Click Printable Doctor Summary */
+@media print {
+  .topbar,
+  .topbar-actions,
+  footer,
+  .footer,
+  button,
+  .view-controls,
+  .organ-controls,
+  .result-filter-box,
+  .source,
+  .source-drawer,
+  .zoom-controls,
+  .page-tabs,
+  .review-actions,
+  .document-filters,
+  .document-card-actions,
+  .library-controls,
+  .form-actions {
+    display: none !important;
+  }
+
+  body, .shell, html {
+    background: #ffffff !important;
+    color: #111827 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    font-size: 11pt !important;
+  }
+
+  .clinical-grid {
+    display: block !important;
+  }
+
+  .panel {
+    break-inside: avoid;
+    border: 1px solid #d1d5db !important;
+    box-shadow: none !important;
+    margin-bottom: 16px !important;
+    padding: 12px !important;
+  }
+
+  .doctor-print-header {
+    display: block !important;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #111827;
+  }
+
+  .doctor-print-header h1 {
+    font-size: 18pt;
+    margin: 0 0 4px 0;
+  }
+
+  .doctor-print-header p {
+    font-size: 11pt;
+    color: #4b5563;
+    margin: 0;
+  }
+}
+
+@media screen {
+  .doctor-print-header {
+    display: none !important;
+  }
+}
+
 /* Empty state */
 .empty-state {
   display: grid;

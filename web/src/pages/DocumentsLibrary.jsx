@@ -33,9 +33,13 @@ export default function DocumentsLibrary({ patient, onOpenDocument, onAdd, onQue
   const [refresh, setRefresh] = useState(0);
   const [retrying, setRetrying] = useState(null);
   const [filter, setFilter] = useState("All");
+  const [sortBy, setSortBy] = useState("date_desc");
+  const [searchQuery, setSearchQuery] = useState("");
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -64,12 +68,41 @@ export default function DocumentsLibrary({ patient, onOpenDocument, onAdd, onQue
     load();
     return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
   }, [patient.id, offset, refresh, filter]);
+
   const groups = useMemo(() => {
-    const sorted = documents.slice().sort((a, b) => {
-      const left = documentDate(a) || "";
-      const right = documentDate(b) || "";
-      return right.localeCompare(left) || (b.created_at || "").localeCompare(a.created_at || "");
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = documents.filter((item) => {
+      if (!q) return true;
+      const name = (item.display_name || docTypeLabel(item.doc_type) || "").toLowerCase();
+      const facility = (item.facility_name || "").toLowerCase();
+      const type = (item.doc_type || "").toLowerCase();
+      const uhid = (item.patient_uhid || "").toLowerCase();
+      return name.includes(q) || facility.includes(q) || type.includes(q) || uhid.includes(q);
     });
+
+    const sorted = filtered.slice().sort((a, b) => {
+      if (sortBy === "date_desc") {
+        const left = documentDate(a) || "";
+        const right = documentDate(b) || "";
+        return right.localeCompare(left) || (b.created_at || "").localeCompare(a.created_at || "");
+      }
+      if (sortBy === "date_asc") {
+        const left = documentDate(a) || "9999-99-99";
+        const right = documentDate(b) || "9999-99-99";
+        return left.localeCompare(right) || (a.created_at || "").localeCompare(b.created_at || "");
+      }
+      if (sortBy === "upload_desc") {
+        return (b.created_at || "").localeCompare(a.created_at || "");
+      }
+      if (sortBy === "doc_type") {
+        return (a.doc_type || "").localeCompare(b.doc_type || "");
+      }
+      if (sortBy === "review_desc") {
+        return (b.review_count || 0) - (a.review_count || 0);
+      }
+      return 0;
+    });
+
     const grouped = new Map();
     for (const item of sorted) {
       const date = documentDate(item);
@@ -78,12 +111,29 @@ export default function DocumentsLibrary({ patient, onOpenDocument, onAdd, onQue
       grouped.get(key).items.push(item);
     }
     return [...grouped.values()];
-  }, [documents, filter]);
+  }, [documents, sortBy, searchQuery]);
 
   function editDocument(document) {
     setEditing({ id: document.id, display_name: document.display_name || "", doc_type: document.doc_type,
       verified_date: documentDate(document)?.slice(0, 10) || "", facility_name: document.facility_name || "" });
     setEditError("");
+  }
+
+  async function deleteDocument(document) {
+    const docName = document.display_name || docTypeLabel(document.doc_type);
+    if (!window.confirm(`Delete "${docName}"? This permanently removes all linked findings and files.`)) {
+      return;
+    }
+    setDeletingId(document.id);
+    setDeleteError("");
+    try {
+      await requestJson(`/api/documents/${document.id}`, { method: "DELETE" });
+      onUpdated?.();
+    } catch (err) {
+      setDeleteError(err.message || "Could not delete document.");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   async function saveDocument(event) {
@@ -134,8 +184,31 @@ export default function DocumentsLibrary({ patient, onOpenDocument, onAdd, onQue
             aria-pressed={filter === item} onClick={() => { setDocuments([]); setHasMore(false); setOffset(0); setFilter(item); }}>{item}</button>)}
           <button type="button" className="text-button" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
         </div>
+        <div className="library-controls">
+          <input
+            type="search"
+            className="library-search-input"
+            placeholder="Search documents, clinic, type…"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            aria-label="Search documents"
+          />
+          <select
+            className="library-sort-select"
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value)}
+            aria-label="Sort documents"
+          >
+            <option value="date_desc">Report Date (Newest first)</option>
+            <option value="date_asc">Report Date (Oldest first)</option>
+            <option value="upload_desc">Upload Date (Newest first)</option>
+            <option value="doc_type">Document Type</option>
+            <option value="review_desc">Needs Review Count</option>
+          </select>
+        </div>
         {loading && !documents.length ? <p className="empty" role="status">Loading documents…</p> : null}
         {error ? <p className="alert" role="alert">{error}</p> : null}
+        {deleteError ? <p className="alert" role="alert">{deleteError}</p> : null}
         {!loading && !error && !groups.length ? <p className="empty">No documents match this filter.</p> : null}
         {groups.map((group) => <section className="document-month" key={group.title} aria-labelledby={`month-${group.title.replaceAll(" ", "-")}`}>
           <h2 id={`month-${group.title.replaceAll(" ", "-")}`}>{group.title}</h2>
@@ -151,15 +224,23 @@ export default function DocumentsLibrary({ patient, onOpenDocument, onAdd, onQue
                 </div>
                 <div className="document-card-actions">
                   <span className={needsReview(document) ? "document-status needs-review" : "document-status"}>
-                     {document.status !== "done" ? statusLabel(document.status) : document.review_count ? `${document.review_count} to review` : statusLabel(document.status)}
-                   </span>
-                   {document.document_id ? <>
-                     <button type="button" className="button-secondary" onClick={() => onOpenDocument(document.document_id)}>Open</button>
-                     <button type="button" className="text-button" onClick={() => editDocument(document)}>Edit details</button>
-                   </> : <button type="button" className="text-button" onClick={onQueue}>View upload in Queue</button>}
-                   {document.retryable ? <button type="button" className="button-secondary" disabled={retrying !== null}
-                     onClick={() => retryDocument(document)}>{retrying === document.id ? "Queueing…" : "Retry processing"}</button> : null}
-                   {!document.document_id && document.job_state === "failed" ? <button type="button" className="button-secondary" onClick={onAdd}>Re-upload</button> : null}
+                    {document.status !== "done" ? statusLabel(document.status) : document.review_count ? `${document.review_count} to review` : statusLabel(document.status)}
+                  </span>
+                  {document.document_id ? <>
+                    <button type="button" className="button-secondary" onClick={() => onOpenDocument(document.document_id)}>Open</button>
+                    <button type="button" className="text-button" onClick={() => editDocument(document)}>Edit details</button>
+                    <button
+                      type="button"
+                      className="text-button text-danger"
+                      disabled={deletingId === document.document_id}
+                      onClick={() => deleteDocument(document)}
+                    >
+                      {deletingId === document.document_id ? "Deleting…" : "Delete"}
+                    </button>
+                  </> : <button type="button" className="text-button" onClick={onQueue}>View upload in Queue</button>}
+                  {document.retryable ? <button type="button" className="button-secondary" disabled={retrying !== null}
+                    onClick={() => retryDocument(document)}>{retrying === document.id ? "Queueing…" : "Retry processing"}</button> : null}
+                  {!document.document_id && document.job_state === "failed" ? <button type="button" className="button-secondary" onClick={onAdd}>Re-upload</button> : null}
                 </div>
                 {editing?.id === document.id ? <form className="document-edit-form" onSubmit={saveDocument}>
                   <label>Document name<input maxLength={200} value={editing.display_name} placeholder={docTypeLabel(document.doc_type)}

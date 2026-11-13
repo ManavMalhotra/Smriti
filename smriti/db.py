@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 MIGRATIONS_PATH = Path(__file__).with_name("migrations")
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 def _migration_path(version: int) -> Path:
@@ -62,7 +62,8 @@ def create_db_engine(db_path: str | Path) -> Engine:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA busy_timeout=15000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 
     return engine

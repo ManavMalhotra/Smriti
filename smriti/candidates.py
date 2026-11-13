@@ -17,11 +17,14 @@ class MaskReviewPage:
     masks: list
 
 
-def clinical_candidate(item) -> Candidate:
+def clinical_candidate(item, engine_name: str | None = None) -> Candidate:
     import re
     from smriti.checks import check_bounds
     from smriti.engines import GEMINI_FLASH_HIGH
     from smriti.resolution import resolve
+
+    if engine_name is None:
+        engine_name = GEMINI_FLASH_HIGH
 
     metadata = item.model_dump(mode="json")
     if item.category == "medication":
@@ -58,7 +61,7 @@ def clinical_candidate(item) -> Candidate:
         unit_raw=item.unit, ref_low=low, ref_high=high, flag_printed=None,
         bbox=[x0 / 1000, y0 / 1000, x1 / 1000, y1 / 1000], page=item.source_page,
         confidence=.6 if item.confidence_note == "deciphered_handwriting" else .8,
-        mapping_rule=resolution.mapping_rule if resolution else "unresolved", engine=GEMINI_FLASH_HIGH,
+        mapping_rule=resolution.mapping_rule if resolution else "unresolved", engine=engine_name or GEMINI_FLASH_HIGH,
         reason=bounds_reason or ("AI date correction; review required." if metadata.get("date_needs_review")
                                 else "Redacted cloud extraction; review required."), clinical_metadata=metadata)
 
