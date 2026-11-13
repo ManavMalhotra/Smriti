@@ -20,7 +20,7 @@ describe("Unified clinical dashboard", () => {
       medications_timeline: { active_scheduled: [], historical_completed: [], conditional_sos_or: [{ ...event,
         id: "med", brand_raw: "Valcivir OR Acyclovir", dose: "1g OR 800mg", freq: "SOS" }] } }} />);
     expect(screen.getByRole("heading", { name: "Allergies" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Alternative / SOS Meds" })).toBeInTheDocument();
+    expect(screen.getByText(/As-needed prescriptions/)).toBeInTheDocument();
     expect(screen.getByText(/Recorded in Discharge Summary/)).toHaveTextContent("8 Apr 2026");
     expect(screen.queryByRole("button", { name: "Patient Friendly" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Doctor Clinical" })).not.toBeInTheDocument();
@@ -40,5 +40,26 @@ describe("Unified clinical dashboard", () => {
   it("Problems is independently accessible", async () => {
     const { container } = render(<main><Problems snapshot={snapshot} onSource={() => {}} /></main>);
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("keeps safety data visible beside a standardized summary", () => {
+    render(
+      <Dashboard
+        data={{
+          ...summary,
+          clinical_snapshot: snapshot,
+          standardized_summary: {
+            concise_history_summary: "Known sulfa allergy.",
+            chronic_conditions: [{ name: "Type 2 diabetes", status: "active" }],
+            year_wise_history: [{ title: "Duplicate report row", exact_date: "2025-11-02" }],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Clinical summary" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Allergies" })).toBeInTheDocument();
+    expect(screen.getByText("Known sulfa allergy.")).toBeInTheDocument();
+    expect(screen.getByText("Type 2 diabetes")).toBeInTheDocument();
+    expect(screen.queryByText("Duplicate report row")).not.toBeInTheDocument();
   });
 });

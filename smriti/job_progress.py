@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 
 EVENTS = {
+    "retry_queued": ("queued", "info", "Queued to retry local processing"),
     "intake_accepted": ("pending_intake", "info", "Upload queued for inspection"),
     "preparing": ("preparing", "info", "Preparing source pages"),
     "prepared": ("queued", "success", "Source prepared; waiting for local processing"),
@@ -187,8 +188,10 @@ def record_progress(
         stage = progress["failure_context"]["stage"]
         model = progress["failure_context"]["model"]
         page = progress["failure_context"]["current_page"]
-    if event in ("started", "recovered", "intake_accepted"):
+    if event in ("started", "recovered", "intake_accepted", "retry_queued"):
         progress.update(started_at=progress.get("started_at") or now, finished_at=None, elapsed_seconds=None, verification_state=None, failure_context=None)
+        if event == "retry_queued":
+            progress["started_at"] = now
     if event in ("qwen_disabled", "handwritten_mode"):
         progress["verification_state"] = "skipped"
     elif event == "qwen_loading":

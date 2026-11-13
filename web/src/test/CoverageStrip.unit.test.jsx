@@ -18,6 +18,6 @@ describe("CoverageStrip", () => {
     expect(cells[2]).toHaveTextContent("2026 Q3");
     expect(cells[2]).toHaveTextContent("1 document");
 
-    expect(screen.getByText("2 documents")).toBeInTheDocument();
+    expect(screen.getByText("2 dated documents")).toBeInTheDocument();
   });
 });

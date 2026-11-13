@@ -11,10 +11,10 @@ export default function SourcePills({ item, onSource }) {
   if (!(item.doc_id ?? item.source_doc_id ?? item.document_id)) return null;
   const anchors = item.source_anchors?.length ? item.source_anchors : [item];
   return anchors.map((anchor, index) => (
-    <button type="button" className="text-button source-pill" key={index}
+    <button type="button" className="text-button source-pill source-tab" key={index}
       aria-label={`Open source for ${item.title ?? item.brand_raw ?? "finding"} on page ${anchor.page_num ?? item.page_num ?? item.page ?? 1}`}
       onClick={() => onSource?.(clinicalSource(item, anchor))}>
-      [p.{anchor.page_num ?? item.page_num ?? item.page ?? 1}]
+      p.{anchor.page_num ?? item.page_num ?? item.page ?? 1}
     </button>
   ));
 }

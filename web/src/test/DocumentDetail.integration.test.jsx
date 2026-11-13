@@ -67,6 +67,16 @@ afterEach(() => {
 });
 
 describe("DocumentDetail", () => {
+  it("zooms the source image without shrinking its layout width", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(detailResponse())));
+    render(<DocumentDetail documentId="doc-1" patient={patient} onBack={() => {}} />);
+    const image = await screen.findByRole("img", { name: "Page 1 of the Lab report" });
+    const zoomContainer = image.parentElement;
+    expect(zoomContainer).toHaveStyle({ width: "100%", transform: "scale(1)" });
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(zoomContainer).toHaveStyle({ width: "100%", transform: "scale(1.25)" });
+  });
+
   it("shows the page image, extracted field, and accepts a value", async () => {
     const onSummary = vi.fn();
     const fetchMock = vi
@@ -259,7 +269,7 @@ describe("DocumentDetail", () => {
     expect(await screen.findByText("CT chest")).toBeInTheDocument();
   });
 
-  it("disables accept and correct for an unmapped field", async () => {
+  it("keeps an unmapped field rejectable and lets review map it", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -277,11 +287,28 @@ describe("DocumentDetail", () => {
 
     const row = await screen.findByRole("row", { name: /Some assay/ });
     expect(
-      within(row).getByText("Not linked to a standard test; reject only."),
+      within(row).getByText("Not linked to a standard test; map it before accepting."),
     ).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Accept" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Correct" })).toBeDisabled();
+    expect(within(row).getByRole("button", { name: "Correct" })).toBeEnabled();
     expect(within(row).getByRole("button", { name: "Reject" })).toBeEnabled();
+  });
+
+  it("keeps a handwritten lab report reviewable instead of hiding its fields", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(detailResponse({
+      doc_type: "lab_report",
+      capture_type: "handwritten",
+      reports: [{ id: "r-1", category: "lab", title: "City Lab", report_date: "2025-11-02",
+        facility_name: "City Lab", page_start: 1, page_end: 1, status: "review",
+        reason: "handwritten page", summary: "HbA1c 8.9 %" }],
+    }))));
+
+    render(<DocumentDetail documentId="doc-1" patient={patient} onBack={() => {}} />);
+
+    expect(await screen.findByText("HbA1c")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Extracted fields" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Handwritten prescription/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Automated fields are hidden/)).not.toBeInTheDocument();
   });
 
   it("requests bounded source pages and result ranges without losing an edit", async () => {

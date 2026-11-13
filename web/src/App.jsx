@@ -281,8 +281,7 @@ export default function App() {
   }
 
   if (view === "documents") {
-    return <DocumentsLibrary patient={patient} documents={summaryData?.documents ?? []}
-      loading={summaryLoading} error={summaryError} onOpenDocument={handleOpenDocument}
+    return <DocumentsLibrary key={patient.id} patient={patient} onOpenDocument={handleOpenDocument}
       onSummary={() => { navigate("summary"); setRefresh((value) => value + 1); }} onAdd={() => navigate("intake")}
       onQueue={() => navigate("queue")} onSignOut={handleLogout}
       onUpdated={() => setRefresh((value) => value + 1)} />;
@@ -299,6 +298,7 @@ export default function App() {
       onSignOut={handleLogout}
       loading={summaryLoading}
       error={summaryError}
+      onRetry={() => setRefresh((value) => value + 1)}
       timeline={timeline}
       timelineLoading={timelineLoading}
       timelineError={timelineError}

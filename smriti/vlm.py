@@ -53,7 +53,7 @@ VLM_IMAGE_LONG_EDGE = 1024
 VLM_MAX_TOKENS = 2048
 # GLM-OCR is prompt-limited: it documents OCR tasks plus strict-schema JSON extraction only.
 VLM_PROMPT = (
-    "请按下列JSON格式输出图中检验结果:\n"
+    "Please output the test results from the image in the following JSON format:\n"
     '{"results":[{"name":"","value":"","unit":"","reference":""}]}'
 )
 

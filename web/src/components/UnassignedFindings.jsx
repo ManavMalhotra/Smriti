@@ -14,26 +14,7 @@ export default function UnassignedFindings({
     const list = [];
     const seen = new Set();
 
-    // 1. Excluded readings from results
-    for (const res of results) {
-      for (const exc of res.excluded ?? []) {
-        const key = `exc-${exc.document_id}-${res.analyte_id}-${exc.reason}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          list.push({
-            id: key,
-            label: res.display,
-            value: "Excluded reading",
-            reason: exc.reason || "Excluded from numerical trend",
-            document_id: exc.document_id,
-            page: 1,
-            type: "excluded",
-          });
-        }
-      }
-    }
-
-    // 2. Non-lab facts or unmapped observations from timeline reports
+    // Non-lab facts or unmapped observations from timeline reports
     const chartedAnalytes = new Set(results.map((r) => r.analyte_id));
     for (const report of timeline) {
       for (const fact of report.facts ?? []) {
@@ -67,11 +48,11 @@ export default function UnassignedFindings({
   const displayed = expanded ? items : items.slice(0, 5);
 
   return (
-    <Panel title="Something missing?">
+    <Panel title="Other extracted findings">
       <div className="unassigned-head">
         <p className="result-note">
           {items.length} extracted {items.length === 1 ? "value or note is" : "values or notes are"} not
-          plotted on the main lab charts (such as prose impressions, unmapped parameters, or excluded readings).
+          plotted on the lab charts.
         </p>
       </div>
 

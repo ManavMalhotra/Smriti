@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import Footer from "../components/Footer";
 import JobProgress from "../components/JobProgress";
 import RedactionConsent from "../components/RedactionConsent";
+import Topbar from "../components/Topbar";
 import { requestJson } from "../lib/api";
-import { docTypeLabel, shortId, statusLabel } from "../lib/format";
+import { docTypeLabel, formatDate, shortId, statusLabel } from "../lib/format";
 
 const PAGE_SIZE = 20;
 
 export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOut, cloudReviewAvailable = false, onDocuments }) {
-  const [scope, setScope] = useState("active");
+  const [scope, setScope] = useState("all");
   const [offset, setOffset] = useState(0);
   const [jobs, setJobs] = useState([]);
   const [hasMore, setHasMore] = useState(false);
@@ -29,12 +30,14 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
     setLoading(true);
 
     async function poll() {
+      let again = scope === "active";
       try {
         const data = await requestJson(`/api/jobs?scope=${scope}&limit=${PAGE_SIZE}&offset=${offset}`, { signal: controller.signal });
         if (cancelled) return;
         setJobs(data.jobs);
         setHasMore(data.has_more);
         setError("");
+        again = again || (scope === "all" && data.jobs.some((job) => ["queued", "running"].includes(job.state)));
         if (selected && !detailStopped && data.jobs.some((job) => job.id === selected)) {
           try {
             const next = await requestJson(`/api/jobs/${selected}`, { signal: controller.signal });
@@ -52,11 +55,12 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
       } catch (err) {
         if (cancelled) return;
         sessionLost = [401, 403].includes(err?.status);
-        setError(sessionLost ? "Your session expired. Sign in again to check progress." : scope === "active" ? "Connection interrupted; checking again. Stored documents are safe." : "Connection interrupted. Refresh to try again. Stored documents are safe.");
+        again = ["all", "active"].includes(scope);
+        setError(sessionLost ? "Your session expired. Sign in again to check progress." : again ? "Connection interrupted; checking again. Stored documents are safe." : "Connection interrupted. Refresh to try again. Stored documents are safe.");
       } finally {
         if (!cancelled) {
           setLoading(false);
-          if (scope === "active" && !sessionLost) timer = setTimeout(poll, 2000);
+          if (again && !sessionLost) timer = setTimeout(poll, 2000);
         }
       }
     }
@@ -87,6 +91,9 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
   async function retry(id) {
     try {
       await requestJson(`/api/jobs/${id}/retry`, { method: "POST" });
+      setScope("all");
+      setOffset(0);
+      setDetail(null);
       setRefresh((value) => value + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not retry the job.");
@@ -107,33 +114,36 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
 
   return (
     <div className="shell">
-      <div className="topbar">
-        <div className="wordmark">Smriti</div>
-        <div className="topbar-actions">
-          <button type="button" className="text-button" onClick={onDone}>Back to summary</button>
-          {onDocuments ? <button type="button" className="text-button" onClick={onDocuments}>Documents</button> : null}
-          <button type="button" className="text-button" onClick={onAdd}>Add document</button>
-          <button type="button" className="text-button" onClick={onSignOut}>Sign out</button>
-        </div>
-      </div>
+      <Topbar
+        current="queue"
+        back={{ label: "Back to summary", onClick: onDone }}
+        onDocuments={onDocuments}
+        onAdd={onAdd}
+        onSignOut={onSignOut}
+      />
       <main>
         {cloudReviewAvailable && awaiting ? <RedactionConsent key={awaiting.document_id} documentId={awaiting.document_id} cloudAvailable={cloudReviewAvailable}
           onResolved={() => { setJobs((current) => current.map((job) => job.id === awaiting.id ? { ...job, status: "running" } : job)); setRefresh((value) => value + 1); }} /> : null}
         <header className="page-head"><h1 tabIndex={-1}>Queue</h1></header>
         <div className="form-actions queue-controls" aria-label="Job lists">
+          <button type="button" className="button-secondary" aria-pressed={scope === "all"} onClick={() => changePage("all", 0)}>All</button>
           <button type="button" className="button-secondary" aria-pressed={scope === "active"} onClick={() => changePage("active", 0)}>Active</button>
-          <button type="button" className="button-secondary" aria-pressed={scope === "recent"} onClick={() => changePage("recent", 0)}>Recent</button>
+          <button type="button" className="button-secondary" aria-pressed={scope === "failed"} onClick={() => changePage("failed", 0)}>Failed</button>
+          <button type="button" className="button-secondary" aria-pressed={scope === "recent"} onClick={() => changePage("recent", 0)}>Finished</button>
           <button type="button" className="text-button" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
         </div>
         {error ? <p className="alert" role="alert">{error}</p> : null}
         {loading && !jobs.length ? <p className="empty" role="status">Loading jobs…</p> : null}
-        {!loading && !error && !jobs.length ? <p className="empty">{scope === "active" ? "No active jobs." : "No recent jobs."}</p> : null}
+        {!loading && !error && !jobs.length ? <p className="empty">{{ all: "No uploaded jobs.", active: "No active jobs.", failed: "No failed jobs.", recent: "No finished jobs." }[scope]}</p> : null}
         <ul className="queue-list">
           {jobs.map((job) => (
             <li key={job.id}>
               <section className="panel" aria-labelledby={`job-${job.id}`}>
                 <div className="result-head">
-                  <h2 id={`job-${job.id}`}>{job.doc_type ? docTypeLabel(job.doc_type) : "Document"} <span className="mono">{shortId(job.document_id ?? job.id)}</span></h2>
+                  <div>
+                    <h2 id={`job-${job.id}`}>{job.doc_type ? docTypeLabel(job.doc_type) : "Document"} <span className="mono">{shortId(job.document_id ?? job.id)}</span></h2>
+                    {job.created_at ? <p className="result-note">Uploaded {formatDate(job.created_at)}</p> : null}
+                  </div>
                   <span className="pill">{statusLabel({ running: "processing", queued: "queued", failed: "failed", done: "done" }[job.state])}</span>
                 </div>
                 <JobProgress job={selected === job.id && detail ? { ...detail, id: job.id } : job} compact={selected !== job.id || !detail} detailsOpen />
@@ -141,7 +151,7 @@ export default function Queue({ patient, onDone, onAdd, onOpenDocument, onSignOu
                 {selected === job.id && !detail && !detailError ? <p role="status">Loading processing details…</p> : null}
                 <div className="form-actions">
                   <button type="button" className="text-button" aria-expanded={selected === job.id} onClick={() => select(job.id)}>{selected === job.id ? "Hide details" : "Show details"}</button>
-                  {["failed", "queued"].includes(job.state) ? (
+                  {job.document_id && ["failed", "queued"].includes(job.state) ? (
                     <button type="button" className="button-secondary" onClick={() => retry(job.id)}>Retry</button>
                   ) : null}
                   {job.state === "failed" ? (

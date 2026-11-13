@@ -20,6 +20,57 @@ from smriti.spool import SpoolError
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
+@router.get("")
+def list_documents(request: Request, limit: int = Query(20, ge=1, le=50),
+                   offset: int = Query(0, ge=0, le=2**31 - 1),
+                   filter: str = Query("All", pattern="^(All|Prescriptions|Lab reports|Scans & discharge|Needs review)$"),
+                   patient: dict = Depends(current_patient)) -> dict:
+    with request.app.state.engine.connect() as conn:
+        rows = conn.execute(text("""
+            WITH uploads AS (
+                SELECT d.id, d.id AS document_id, d.display_name, d.doc_type,
+                       d.verified_date, d.doc_date, d.collection_date, d.registration_date,
+                       d.report_date, COALESCE(d.facility_name, d.lab_name) AS facility_name,
+                       d.page_count, d.status, d.processed_at, d.created_at,
+                       (SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id AND o.status = 'review') +
+                       (SELECT COUNT(*) FROM report r WHERE r.document_id = d.id AND r.status = 'review') AS review_count,
+                       j.id AS job_id, j.state AS job_state,
+                       CASE WHEN j.state = 'failed' AND d.status = 'failed' AND s.state = 'promoted'
+                            AND s.consent_revoked_at IS NULL AND c.revoked_at IS NULL AND c.document_id IS NOT NULL
+                            AND (s.batch_id IS NULL OR b.state = 'done')
+                            AND COALESCE(json_extract(s.preparation_manifest_json, '$.processing.cleanup'), 'confirmed') = 'confirmed'
+                            AND NOT EXISTS (
+                                SELECT 1 FROM observation WHERE document_id = d.id UNION ALL
+                                SELECT 1 FROM report WHERE document_id = d.id UNION ALL
+                                SELECT 1 FROM page_text WHERE document_id = d.id UNION ALL
+                                SELECT 1 FROM directive WHERE document_id = d.id UNION ALL
+                                SELECT 1 FROM medication WHERE source_doc_id = d.id UNION ALL
+                                SELECT 1 FROM handwriting_field WHERE document_id = d.id)
+                            THEN 1 ELSE 0 END AS retryable
+                FROM document d
+                LEFT JOIN jobs j ON j.id = (SELECT id FROM jobs WHERE document_id = d.id ORDER BY ts DESC, id DESC LIMIT 1)
+                LEFT JOIN submissions s ON s.job_id = j.id
+                LEFT JOIN consent c ON c.document_id = d.id
+                LEFT JOIN stage_batches b ON b.id = s.batch_id
+                WHERE d.patient_id = :patient_id
+                UNION ALL
+                SELECT s.job_id, NULL, NULL, s.requested_doc_type, NULL,
+                       s.requested_doc_date, s.requested_collection_date, NULL, NULL, NULL,
+                       NULL, s.state, NULL, s.created_at, 0, s.job_id,
+                       CASE s.state WHEN 'pending_intake' THEN 'queued' WHEN 'preparing' THEN 'running' ELSE 'failed' END, 0
+                FROM submissions s WHERE s.patient_id = :patient_id AND s.state <> 'promoted'
+            )
+            SELECT * FROM uploads
+            WHERE (:filter = 'All'
+                OR (:filter = 'Prescriptions' AND doc_type IN ('prescription', 'pharmacy'))
+                OR (:filter = 'Lab reports' AND doc_type = 'lab_report')
+                OR (:filter = 'Scans & discharge' AND doc_type IN ('ct', 'mri', 'xray', 'radiology', 'pathology', 'discharge_summary'))
+                OR (:filter = 'Needs review' AND (status <> 'done' OR review_count > 0)))
+            ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset
+        """), {"patient_id": patient["id"], "limit": limit + 1, "offset": offset, "filter": filter}).mappings().all()
+    return {"documents": [dict(row) for row in rows[:limit]], "has_more": len(rows) > limit,
+            "offset": offset, "limit": limit}
+
 @router.patch("/{document_id}")
 def update_document(document_id: str, payload: DocumentUpdate, request: Request,
                     patient: dict = Depends(current_patient)) -> dict:

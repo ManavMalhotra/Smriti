@@ -109,6 +109,22 @@ afterEach(() => {
 });
 
 describe("Intake", () => {
+  it("keeps a duplicate's existing job link so its failure remains visible", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ duplicate: true, document_id: "existing",
+      job_id: "existing-job", status: "promoted", page_count: 16 }, 409))
+      .mockResolvedValue(jsonResponse({ id: "existing-job", document_id: "existing", state: "failed", stage: "ocr", total_pages: 16, events: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    const onOpenDocument = vi.fn();
+    render(<Intake patient={patient} onDone={() => {}} onOpenDocument={onOpenDocument} />);
+    await fillForm(user);
+    await submit(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/jobs/existing-job", expect.objectContaining({ credentials: "same-origin" })));
+    await user.click(screen.getByRole("button", { name: "Open document" }));
+    expect(onOpenDocument).toHaveBeenCalledWith("existing");
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/documents")).toHaveLength(1);
+  });
+
   it("requires a file and consent before calling the API", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

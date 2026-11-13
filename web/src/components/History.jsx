@@ -93,25 +93,28 @@ export default function History({
                 <div className="timeline-title">
                   <span>{entry.title}</span>
                   {entry.category && !Array.isArray(events) ? <span className="pill">{categoryLabel(entry.category)}</span> : null}
-                  {entry.status && entry.status !== "done" ? (
+                  {entry.status && ["review", "failed", "rejected"].includes(entry.status) ? (
                     <span className="pill">{statusLabel(entry.status)}</span>
                   ) : null}
                 </div>
                 {entry.summary ? <p className="timeline-summary">{entry.summary}</p> : null}
                 {entry.is_backdated_from_summary ? <p className="result-note">Recorded in Discharge Summary ({formatDate(entry.report_date)})</p> : null}
                 {entry.date_needs_review ? <p className="alert">AI date correction — verify the source date.</p> : null}
-                <p className="result-note">
-                  {[entry.facility, entry.reviewCount > 0 ? `${entry.reviewCount} to review` : null]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
+                {[entry.facility, entry.reviewCount > 0 ? `${entry.reviewCount} to review` : null]
+                  .filter(Boolean).length ? (
+                  <p className="result-note">
+                    {[entry.facility, entry.reviewCount > 0 ? `${entry.reviewCount} to review` : null]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                ) : null}
                 {Array.isArray(events) ? <SourcePills item={entry} onSource={onSource} /> : <button
                   type="button"
                   className="text-button"
                   onClick={() => onOpen?.(entry.documentId, entry.page)}
                   aria-label={`Open ${entry.title} from ${formatDate(entry.date)}`}
                 >
-                  Open source
+                  View page
                 </button>}
               </div>
             </li>

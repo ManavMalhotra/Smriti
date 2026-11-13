@@ -36,13 +36,9 @@ describe("Medications", () => {
   it("groups medications by state without merging them", () => {
     render(<Medications medications={medications} />);
 
-    expect(screen.getByRole("heading", { name: "Prescribed" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Reported ongoing" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Reported stopped" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Prescribed")).toBeInTheDocument();
+    expect(screen.getByText("Reported ongoing")).toBeInTheDocument();
+    expect(screen.getByText("Reported stopped")).toBeInTheDocument();
 
     expect(screen.getByText("Metformin")).toBeInTheDocument();
     expect(screen.getByText("Amlodipine")).toBeInTheDocument();

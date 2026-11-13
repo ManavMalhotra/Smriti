@@ -297,6 +297,18 @@ Requires the signed-in patient's own id. Fences admission/consent, confirms owne
 
 ## 4. Documents
 
+### `GET /api/documents?limit=20&offset=0&filter=All`
+
+Owner-only, bounded upload inventory independent of clinical summaries. Includes every retained prepared document (queued, processing, failed, rejected-quality or completed), plus accepted submissions that have not produced a document yet. Returns `documents`, `has_more`, `offset`, and `limit` (1–50). Optional `filter` applies `All`, `Prescriptions`, `Lab reports`, `Scans & discharge`, or `Needs review` before pagination.
+
+Each row includes its stable `id`, nullable `document_id`, nullable `job_id`/`job_state`, document metadata/status, nullable `page_count` and `retryable`. Pending uploads use the submission/job id and unknown page count; no fake clinical document is created. Prepared failed documents remain openable. Raw paths, hashes and processing manifests are not returned. Documents fetches this inventory on entry/refresh and polls nonterminal rows; all pages are accessible through pagination.
+
+### `POST /api/jobs/{id}/retry`
+
+Retries that requested optional cloud extraction require fresh mask approval; an explicit prior decline stays declined. Retrying never automatically resends an approved cloud payload.
+
+Requeues an owner's failed or unassigned queued prepared job, without re-uploading or creating a second document. Requires live admission/consent, released batch membership, confirmed scratch cleanup and no existing clinical results. Clears obsolete scratch readiness/degradation flags, retains canonical sources, appends `retry_queued` to history, and resets current progress. Active ownership or unconfirmed cleanup returns 409; paused service returns 503; demo writes are forbidden. Successfully published or manually entered results are never replaced. Failed preparation with no retained prepared source requires a new upload.
+
 ### `POST /api/documents`
 
 Requires the session cookie. `multipart/form-data`:
@@ -438,7 +450,7 @@ Requires ownership. Binary `image/webp`. `404` when the document, page, or store
 
 ### `GET /api/jobs?scope=active&limit=20&offset=0`
 
-Requires a patient session; returns only the signed-in owner's jobs. `scope` is `active` (default: queued/running, oldest submission first) or `recent` (done/failed, newest submission first). Each scope paginates independently. `limit` defaults to 20, range 1–50; `offset` defaults to 0, range 0–2147483647. Invalid query values return the house `400 validation_error` response.
+Requires a patient session; returns only the signed-in owner's jobs. `scope` is `active` (API default: queued/running, oldest submission first), `all` (all retained jobs), `failed` (processing/preparation failures), or `recent` (done/failed). Other scopes use newest submission first and paginate independently. Queue defaults to All so failed uploads remain discoverable, with Active/Failed/Recent filters. `limit` defaults to 20, range 1–50; `offset` defaults to 0, range 0–2147483647. Invalid query values return the house `400 validation_error` response.
 
 ```json
 {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Footer from "../components/Footer";
 import PageOverlay from "../components/PageOverlay";
+import Topbar from "../components/Topbar";
 import { requestJson } from "../lib/api";
 import {
   categoryLabel,
@@ -196,8 +197,15 @@ export default function DocumentDetail({
     (observation) => observation.status === "review",
   ).length;
   const changingDisabled = Boolean(savingId || savingReportId || editingId || editingReportId);
-  const needsHumanReview = detail?.capture_type === "handwritten" || reports.some((report) =>
-    report.status === "review" && page >= report.page_start && page <= report.page_end && /handwrit|low-confidence/i.test(report.reason || ""));
+  const needsHumanReview = detail?.doc_type === "prescription" && (
+    detail?.capture_type === "handwritten" || reports.some((report) =>
+      report.status === "review" && page >= report.page_start && page <= report.page_end && /handwrit|low-confidence/i.test(report.reason || ""))
+  );
+
+  function selectObservation(observation) {
+    setActiveObsId(observation.id);
+    if (observation.page && observation.page !== page) changePage(observation.page);
+  }
 
   async function saveQuickEntry(event) {
     event.preventDefault();
@@ -225,21 +233,13 @@ export default function DocumentDetail({
 
   return (
     <div className="shell review-shell">
-      <div className="topbar">
-        <div className="wordmark">Smriti</div>
-        <div className="topbar-actions">
-          <button type="button" className="text-button" onClick={onBack}>
-            {backLabel}
-          </button>
-          {onDocuments ? <button type="button" className="text-button" onClick={onDocuments}>Documents</button> : null}
-          {onQueue ? <button type="button" className="text-button" onClick={onQueue}>Queue</button> : null}
-          {onSignOut ? (
-            <button type="button" className="text-button" onClick={onSignOut}>
-              Sign out
-            </button>
-          ) : null}
-        </div>
-      </div>
+      <Topbar
+        current="document"
+        back={{ label: backLabel, onClick: onBack }}
+        onDocuments={onDocuments}
+        onQueue={onQueue}
+        onSignOut={onSignOut}
+      />
 
       <main>
         <header className="page-head">
@@ -342,7 +342,7 @@ export default function DocumentDetail({
                       style={{
                         transform: `scale(${zoom / 100})`,
                         transformOrigin: "top left",
-                        width: `${100 * (100 / zoom)}%`,
+                        width: "100%",
                       }}
                     >
                       <PageOverlay
@@ -359,7 +359,7 @@ export default function DocumentDetail({
                       Highlighted boxes mark extracted values.
                     </span>
                     <a href={currentPage.url} target="_blank" rel="noreferrer" className="text-button">
-                      Open full image ↗
+                      Open full image
                     </a>
                   </div>
                 </section>
@@ -369,7 +369,7 @@ export default function DocumentDetail({
             {/* RIGHT COLUMN: Extracted Values, Actions & Document Details */}
             <div className="workbench-details-col">
               {needsHumanReview ? <section className="panel handwritten-entry" aria-labelledby="handwritten-heading">
-                <h2 id="handwritten-heading">Handwritten page · enter what you can read</h2>
+                <h2 id="handwritten-heading">Handwritten prescription · enter what you can read</h2>
                 <p className="result-note">Cursive text is left for human review. Save only details you can verify from the page.</p>
                 {quickSaved ? <p className="success-note" role="status">Your verified details were saved.</p> : <form className="review-form" onSubmit={saveQuickEntry}>
                   <p className="item-meta">Document type · Prescription</p>
@@ -421,24 +421,23 @@ export default function DocumentDetail({
                             <tr
                               key={observation.id}
                               className={isSelected ? "review-row-active" : undefined}
-                              onMouseEnter={() => {
-                                setActiveObsId(observation.id);
-                                if (observation.page && observation.page !== page) {
-                                  changePage(observation.page);
-                                }
-                              }}
-                              onClick={() => {
-                                setActiveObsId(observation.id);
-                                if (observation.page && observation.page !== page) {
-                                  changePage(observation.page);
-                                }
-                              }}
+                              onClick={() => selectObservation(observation)}
                             >
                               <td className="field-cell" data-label="Field">
-                                <span className="doc-type">{fieldLabel(observation)}</span>
+                                <button
+                                  type="button"
+                                  className="field-select"
+                                  aria-pressed={isSelected}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    selectObservation(observation);
+                                  }}
+                                >
+                                  {fieldLabel(observation)}
+                                </button>
                                 {!observation.analyte_id && observation.value_num != null ? (
                                   <span className="doc-id">
-                                    Not linked to a standard test; reject only.
+                                    Not linked to a standard test; map it before accepting.
                                   </span>
                                 ) : null}
                               </td>
@@ -532,11 +531,7 @@ export default function DocumentDetail({
                                         type="button"
                                         className="text-button"
                                         onClick={() => beginCorrect(observation)}
-                                        disabled={
-                                          savingId === observation.id ||
-                                          (!observation.analyte_id &&
-                                            observation.value_num != null)
-                                        }
+                                        disabled={savingId === observation.id}
                                       >
                                         Correct
                                       </button>
@@ -706,9 +701,12 @@ export default function DocumentDetail({
                     {medications.map((medication) => (
                       <li key={medication.id}>
                         <span>{medication.brand_raw}</span>
-                        <span className="unit">
-                          {[medication.dose, medication.freq].filter(Boolean).join(" · ")}
-                        </span>
+                        {[medication.dose, medication.freq].filter(Boolean).length ? (
+                          <span className="unit">
+                            {" · "}
+                            {[medication.dose, medication.freq].filter(Boolean).join(" · ")}
+                          </span>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
@@ -776,8 +774,9 @@ export default function DocumentDetail({
               </section> : null}
 
               <section className="panel" aria-labelledby="audit-logs-heading">
-                <h2 id="audit-logs-heading">Audit & Cloud Review Logs</h2>
+                <h2 id="audit-logs-heading">Cloud review log</h2>
                 {detail.egress?.length > 0 ? (
+                  <div className="table-wrap">
                   <table className="egress-table">
                     <thead>
                       <tr>
@@ -790,8 +789,8 @@ export default function DocumentDetail({
                     <tbody>
                       {detail.egress.map((log) => (
                         <tr key={log.id}>
-                          <td>{formatDate(log.ts)}</td>
-                          <td>{log.model_id || "gemini-3.8-flash-high"}</td>
+                          <td>{formatDateTime(log.ts)}</td>
+                          <td>{log.model_id || "Not recorded"}</td>
                           <td title={log.payload_sha256}>{log.payload_sha256?.slice(0, 12)}…</td>
                           <td>
                             <span className={`egress-outcome ${log.outcome}`}>
@@ -802,8 +801,9 @@ export default function DocumentDetail({
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 ) : (
-                  <p className="empty">No cloud egress events. All processing for this document remained strictly on local device.</p>
+                  <p className="empty">No cloud processing for this document.</p>
                 )}
               </section>
             </div>

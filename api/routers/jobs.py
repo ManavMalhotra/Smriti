@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from typing import Literal
 
@@ -11,9 +12,10 @@ from sqlalchemy.exc import IntegrityError
 
 from api.errors import api_error
 from smriti.auth import audit, current_patient
-from smriti.job_progress import EVENTS, INTAKE_ERRORS, read_progress
+from smriti.job_progress import EVENTS, INTAKE_ERRORS, progress_transaction, read_progress, record_progress
 from smriti.observability import safe_engine
 from smriti.runtime import FAILURE_CODES
+from smriti.spool import _now
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -21,7 +23,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.get("")
 def list_jobs(
     request: Request,
-    scope: Literal["active", "recent"] = "active",
+    scope: Literal["all", "active", "failed", "recent"] = "active",
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0, le=2**31 - 1),
     patient: dict = Depends(current_patient),
@@ -36,14 +38,16 @@ def list_jobs(
                 LEFT JOIN submissions s ON s.job_id = j.id
                 LEFT JOIN cloud_consent c ON c.document_id = d.id
                 WHERE d.patient_id = :patient_id
-                  AND ((:scope = 'active' AND j.state IN ('queued', 'running'))
+                  AND (:scope = 'all' OR (:scope = 'failed' AND j.state = 'failed')
+                    OR (:scope = 'active' AND j.state IN ('queued', 'running'))
                     OR (:scope = 'recent' AND j.state IN ('done', 'failed')))
                 UNION ALL
                 SELECT s.job_id, CASE s.state WHEN 'pending_intake' THEN 'queued'
                             WHEN 'preparing' THEN 'running' ELSE 'failed' END,
                        NULL, NULL, s.requested_doc_type, s.created_at, s.progress_json, s.stage, s.error_code, NULL
                 FROM submissions s WHERE s.patient_id = :patient_id AND s.state <> 'promoted'
-                  AND ((:scope = 'active' AND s.state IN ('pending_intake', 'preparing'))
+                  AND (:scope = 'all' OR (:scope = 'failed' AND s.state IN ('rejected', 'failed', 'cancelled'))
+                    OR (:scope = 'active' AND s.state IN ('pending_intake', 'preparing'))
                     OR (:scope = 'recent' AND s.state IN ('rejected', 'failed', 'cancelled')))
             )
             SELECT id, state, document_id, total, doc_type, created_at, stage, error_code, cloud_state,
@@ -80,25 +84,59 @@ def retry_job(
     request: Request,
     patient: dict = Depends(current_patient),
 ) -> dict:
+    if request.app.state.settings.demo:
+        api_error(403, "demo_read_only", "The demo profile is read-only.")
+    if not request.app.state.service.accepting:
+        api_error(503, "service_unavailable", "Local processing is paused. Try again after recovery.")
     engine = request.app.state.engine
-    with engine.begin() as conn:
+    with progress_transaction(engine) as conn:
+        # Acquire the write lock before checking ownership or coordinator membership.
+        conn.execute(text("UPDATE submissions SET updated_at = updated_at WHERE job_id = :id"), {"id": job_id})
         owned = conn.execute(
-            text("""SELECT j.id FROM jobs j JOIN document d ON d.id = j.document_id
+            text("""SELECT j.id, j.state, d.id AS document_id, s.state AS submission_state,
+                           s.batch_id, b.state AS batch_state, s.preparation_manifest_json,
+                           s.consent_revoked_at, c.revoked_at, c.document_id AS consent_id, j.total
+                    FROM jobs j JOIN document d ON d.id = j.document_id
+                    LEFT JOIN submissions s ON s.job_id = j.id
+                    LEFT JOIN stage_batches b ON b.id = s.batch_id
+                    LEFT JOIN consent c ON c.document_id = d.id
                     WHERE j.id = :id AND d.patient_id = :patient_id
-                      AND j.state IN ('failed', 'queued')"""),
+                      AND j.state IN ('failed', 'queued') AND d.status IN ('failed', 'queued')"""),
             {"id": job_id, "patient_id": patient["id"]},
-        ).first()
+        ).mappings().first()
         if owned is None:
             api_error(404, "not_found", f"No retryable job {job_id}.")
+        if owned["submission_state"] != "promoted":
+            api_error(409, "source_unavailable", "This upload has no prepared source for retry.")
+        if owned["consent_id"] is None or owned["consent_revoked_at"] is not None or owned["revoked_at"] is not None:
+            api_error(409, "consent_revoked", "Consent is required before retrying this document.")
+        if owned["batch_id"] is not None and owned["batch_state"] != "done":
+            api_error(409, "job_active", "This document is still owned by a processing batch. Wait for cleanup.")
+        manifest = json.loads(owned["preparation_manifest_json"])
+        if manifest.get("processing", {}).get("cleanup") not in (None, "confirmed"):
+            api_error(409, "cleanup_failed", "Processing cleanup is unconfirmed. Local recovery is required.")
+        for table, owner in (("observation", "document_id"), ("report", "document_id"),
+                             ("page_text", "document_id"), ("directive", "document_id"),
+                             ("medication", "source_doc_id"), ("handwriting_field", "document_id")):
+            if conn.execute(text(f"SELECT 1 FROM {table} WHERE {owner} = :id LIMIT 1"), {"id": owned["document_id"]}).first():
+                api_error(409, "results_exist", "This document already has saved results; retry will not replace them.")
+        # Completed cleanup deleted scratch; readiness flags must not reuse those deleted artifacts.
+        manifest.pop("processing", None)
         try:
-            conn.execute(text("""UPDATE submissions SET error_code = NULL, batch_id = NULL, batch_position = NULL
-                                 WHERE job_id = :id"""), {"id": job_id})
+            conn.execute(text("""UPDATE submissions SET error_code = NULL, batch_id = NULL, batch_position = NULL,
+                                 preparation_manifest_json = :manifest WHERE job_id = :id"""),
+                         {"id": job_id, "manifest": json.dumps(manifest, separators=(",", ":"))})
         except IntegrityError:
             # The batch it belongs to is still active; re-freezing is not allowed.
             api_error(409, "job_active", "This document is already being processed.")
-        conn.execute(text("UPDATE jobs SET state = 'queued', error = NULL WHERE id = :id"), {"id": job_id})
+        conn.execute(text("UPDATE jobs SET state = 'queued', page = 0, error = NULL WHERE id = :id"), {"id": job_id})
         conn.execute(text("""UPDATE document SET status = 'queued'
-                             WHERE id = (SELECT document_id FROM jobs WHERE id = :id)"""), {"id": job_id})
+                              WHERE id = (SELECT document_id FROM jobs WHERE id = :id)"""), {"id": job_id})
+        record_progress(conn, job_id, "retry_queued", completed=0, total=owned["total"])
+        conn.execute(text("""UPDATE cloud_consent SET status = 'awaiting', extra_boxes_json = '{}', updated_at = :now
+            WHERE document_id = :id AND status <> 'declined'
+              AND EXISTS (SELECT 1 FROM consent WHERE document_id = :id AND scope = 'local_plus_projection')"""),
+                     {"id": owned["document_id"], "now": _now()})
     return {"id": job_id, "state": "queued"}
 
 
